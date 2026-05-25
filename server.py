@@ -9,10 +9,18 @@ from typing import Any
 
 import os
 
-# Try local dev SDK path (report-generator sibling), then PYTHONPATH fallback
-_sdk_path = os.path.join(os.path.dirname(__file__), "..", "report-generator", ".irislabs", "sdk")
-if os.path.isdir(_sdk_path):
-    sys.path.insert(0, os.path.abspath(_sdk_path))
+# Locate IrisLabs SDK — check several candidate paths in priority order
+_here = os.path.dirname(os.path.abspath(__file__))
+_sdk_candidates = [
+    os.path.join(_here, "sdk"),                                               # deployed: ~/.config/snowflake-dac/sdk
+    os.path.join(_here, "..", "report-generator", ".irislabs", "sdk"),        # dev: sibling repo
+    os.path.join(os.path.expanduser("~"), "iris", "report-generator", ".irislabs", "sdk"),
+    os.path.join(os.path.expanduser("~"), "report-generator", ".irislabs", "sdk"),
+]
+for _candidate in _sdk_candidates:
+    if os.path.isdir(_candidate):
+        sys.path.insert(0, os.path.abspath(_candidate))
+        break
 
 import tools.allstate as allstate_mod
 import tools.mnp as mnp_mod

@@ -26,7 +26,7 @@
   "mcpServers": {
     "snowflake_dac": {
       "command": "python3",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/server.py"],
+      "args": ["${HOME}/.config/snowflake-dac/server.py"],
       "env": {
         "IRIS_CONTROL_PLANE_URL": "${user_config.iris_control_plane_url}",
         "IRISLABS_APP_ID": "${user_config.irislabs_app_id}",
