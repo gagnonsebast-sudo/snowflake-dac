@@ -1,0 +1,33 @@
+{
+  "name": "snowflake-dac",
+  "version": "0.1.0",
+  "description": "Snowflake DAC — Allstate & MNP paid media performance tools for IRIS",
+  "type": "mcp_server",
+  "server": {
+    "transport": "stdio",
+    "command": "python",
+    "args": ["server.py"]
+  },
+  "tools": [
+    "allstate_performance",
+    "allstate_conversion_breakdown",
+    "allstate_by_region",
+    "allstate_by_campaign",
+    "allstate_wow",
+    "allstate_pacing",
+    "allstate_language_split",
+    "allstate_category_split",
+    "allstate_daily_trend",
+    "allstate_top_campaigns",
+    "allstate_query",
+    "mnp_performance",
+    "mnp_conversion_breakdown",
+    "mnp_by_channel",
+    "mnp_web_sessions",
+    "mnp_wow",
+    "mnp_invoca_reconciliation",
+    "mnp_daily_trend",
+    "mnp_by_ad_set",
+    "mnp_query"
+  ]
+}
