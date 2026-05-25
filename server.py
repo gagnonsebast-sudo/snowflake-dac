@@ -7,8 +7,9 @@ import sys
 import traceback
 from typing import Any
 
-# Add SDK to path if running from project root
 import os
+
+# Try local dev SDK path (report-generator sibling), then PYTHONPATH fallback
 _sdk_path = os.path.join(os.path.dirname(__file__), "..", "report-generator", ".irislabs", "sdk")
 if os.path.isdir(_sdk_path):
     sys.path.insert(0, os.path.abspath(_sdk_path))

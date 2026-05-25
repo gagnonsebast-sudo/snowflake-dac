@@ -1,29 +1,46 @@
 {
   "name": "snowflake-dac",
   "version": "0.1.0",
-  "description": "Snowflake DAC — Allstate & MNP paid media performance tools for IRIS",
-  "transport": "stdio",
-  "command": "python server.py",
-  "tools": [
-    "allstate_performance",
-    "allstate_conversion_breakdown",
-    "allstate_by_region",
-    "allstate_by_campaign",
-    "allstate_wow",
-    "allstate_pacing",
-    "allstate_language_split",
-    "allstate_category_split",
-    "allstate_daily_trend",
-    "allstate_top_campaigns",
-    "allstate_query",
-    "mnp_performance",
-    "mnp_conversion_breakdown",
-    "mnp_by_channel",
-    "mnp_web_sessions",
-    "mnp_wow",
-    "mnp_invoca_reconciliation",
-    "mnp_daily_trend",
-    "mnp_by_ad_set",
-    "mnp_query"
-  ]
+  "description": "Plugin Claude pour DAC Group — accès aux performances paid media Allstate & MNP (spend, leads, CPL, WoW, pacing) directement depuis vos conversations.",
+  "repository": "https://github.com/gagnonsebast-sudo/snowflake-dac",
+  "userConfig": {
+    "iris_control_plane_url": {
+      "type": "string",
+      "title": "IRIS Control Plane URL",
+      "description": "URL du Control Plane IrisLabs (ex: https://control-plane.irislabs.io)",
+      "required": true
+    },
+    "irislabs_app_id": {
+      "type": "string",
+      "title": "IrisLabs App ID",
+      "description": "App ID du projet IRIS (IRISLABS_APP_ID)",
+      "required": true
+    },
+    "iris_sdk_secret": {
+      "type": "string",
+      "title": "IRIS SDK Secret",
+      "description": "Secret d'authentification IrisLabs (IRIS_SDK_SECRET)",
+      "sensitive": true,
+      "required": true
+    }
+  },
+  "mcpServers": {
+    "snowflake-dac": {
+      "command": "python3",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server.py"],
+      "env": {
+        "IRIS_CONTROL_PLANE_URL": "${user_config.iris_control_plane_url}",
+        "IRISLABS_APP_ID": "${user_config.irislabs_app_id}",
+        "IRIS_SDK_SECRET": "${user_config.iris_sdk_secret}"
+      }
+    }
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "pip3 install -q irislabs 2>/dev/null; exit 0"
+      }
+    ]
+  }
 }
