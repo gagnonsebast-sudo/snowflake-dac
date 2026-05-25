@@ -24,9 +24,11 @@ echo "✅ Serveur copié vers $DEPLOY_DIR"
 # Localiser le SDK IrisLabs
 SDK_CANDIDATES=(
     "$REPO_DIR/../report-generator/.irislabs/sdk"
+    "$HOME/Documents/Claude/Projects/IRIS/report-generator/.irislabs/sdk"
     "$HOME/iris/report-generator/.irislabs/sdk"
     "$HOME/report-generator/.irislabs/sdk"
     "$HOME/IRIS/report-generator/.irislabs/sdk"
+    "$HOME/Desktop/Claude/Allstate/iris-app/.irislabs/sdk"
 )
 
 SDK_PATH=""
