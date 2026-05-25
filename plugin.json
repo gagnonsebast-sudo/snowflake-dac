@@ -2,7 +2,6 @@
   "name": "snowflake-dac",
   "version": "0.1.0",
   "description": "Plugin Claude pour DAC Group — accès aux performances paid media Allstate & MNP (spend, leads, CPL, WoW, pacing) directement depuis vos conversations.",
-  "repository": "https://github.com/gagnonsebast-sudo/snowflake-dac",
   "userConfig": {
     "iris_control_plane_url": {
       "type": "string",
@@ -22,25 +21,24 @@
       "description": "Secret d'authentification IrisLabs (IRIS_SDK_SECRET)",
       "sensitive": true,
       "required": true
+    },
+    "irislabs_sdk_path": {
+      "type": "string",
+      "title": "IrisLabs SDK Path",
+      "description": "Chemin vers le SDK IrisLabs (ex: /Users/sebas/iris/report-generator/.irislabs/sdk)",
+      "required": false
     }
   },
   "mcpServers": {
-    "snowflake-dac": {
+    "snowflake_dac": {
       "command": "python3",
       "args": ["${CLAUDE_PLUGIN_ROOT}/server.py"],
       "env": {
         "IRIS_CONTROL_PLANE_URL": "${user_config.iris_control_plane_url}",
         "IRISLABS_APP_ID": "${user_config.irislabs_app_id}",
-        "IRIS_SDK_SECRET": "${user_config.iris_sdk_secret}"
+        "IRIS_SDK_SECRET": "${user_config.iris_sdk_secret}",
+        "PYTHONPATH": "${user_config.irislabs_sdk_path}"
       }
     }
-  },
-  "hooks": {
-    "SessionStart": [
-      {
-        "type": "command",
-        "command": "pip3 install -q irislabs 2>/dev/null; exit 0"
-      }
-    ]
   }
 }
