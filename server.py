@@ -12,8 +12,9 @@ import os
 # Locate IrisLabs SDK — check several candidate paths in priority order
 _here = os.path.dirname(os.path.abspath(__file__))
 _sdk_candidates = [
-    os.path.join(_here, "sdk"),                                               # deployed: ~/.config/snowflake-dac/sdk
+    os.path.join(_here, "sdk"),                                               # deployed symlink
     os.path.join(_here, "..", "report-generator", ".irislabs", "sdk"),        # dev: sibling repo
+    os.path.join(os.path.expanduser("~"), "Documents", "Claude", "Projects", "IRIS", "report-generator", ".irislabs", "sdk"),
     os.path.join(os.path.expanduser("~"), "iris", "report-generator", ".irislabs", "sdk"),
     os.path.join(os.path.expanduser("~"), "report-generator", ".irislabs", "sdk"),
 ]
