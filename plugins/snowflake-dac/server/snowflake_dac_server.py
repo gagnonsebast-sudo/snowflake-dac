@@ -40,10 +40,21 @@ try:
     from mcp.server.fastmcp import FastMCP
 except ImportError:
     import subprocess
-    subprocess.run(
+    _installed = False
+    for _pip in [
         [sys.executable, "-m", "pip", "install", "-q", "mcp[cli]>=1.0.0"],
-        capture_output=True, check=False,
-    )
+        [sys.executable, "-m", "pip", "install", "-q", "--break-system-packages", "mcp[cli]>=1.0.0"],
+        [sys.executable, "-m", "pip", "install", "-q", "--user", "mcp[cli]>=1.0.0"],
+    ]:
+        if subprocess.run(_pip, capture_output=True).returncode == 0:
+            _installed = True
+            break
+    if not _installed:
+        print(
+            f"[{_ts}] ❌ Impossible d'installer mcp. Lance manuellement: pip3 install 'mcp[cli]>=1.0.0'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     from mcp.server.fastmcp import FastMCP
 
 import allstate as allstate_mod
