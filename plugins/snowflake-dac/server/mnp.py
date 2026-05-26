@@ -16,7 +16,7 @@ MAIN_VIEW = f"{DB}.R_RPT_PAID_MEDIA"
 WEB_VIEW = f"{DB}.R_RPT_WEB_SESSIONS"
 
 MNP_BLOCKER_MSG = (
-    "MNP data temporarily unavailable — view under maintenance (contact Bradly). "
+    "MNP data temporarily unavailable — view under maintenance (contact data engineering). "
     "Allstate is unaffected."
 )
 

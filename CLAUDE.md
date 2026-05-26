@@ -33,7 +33,7 @@ Before fetching any data, identify which client the user is asking about.
 
 | Issue | Behavior |
 |-------|----------|
-| MNP view `R_RPT_PAID_MEDIA` returns `invalid identifier 'C.CHANNELS'` | Every MNP tool catches it and returns: *"MNP data temporarily unavailable — view under maintenance (contact Bradly). Allstate is unaffected."* — surface verbatim, do not retry. |
+| MNP view `R_RPT_PAID_MEDIA` returns `invalid identifier 'C.CHANNELS'` | Every MNP tool catches it and returns: *"MNP data temporarily unavailable — view under maintenance (contact data engineering). Allstate is unaffected."* — surface verbatim, do not retry. |
 | IrisLabs SDK not found | Tools return: *"❌ SDK IrisLabs introuvable. Vérifie qu'il est présent à un emplacement standard..."* |
 | `IRIS_SDK_SECRET` missing | Tools return: *"❌ IRIS_SDK_SECRET non configuré dans les paramètres du plugin."* |
 | Snowflake timeout | Tools suggest a shorter date range. |

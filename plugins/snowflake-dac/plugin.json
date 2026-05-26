@@ -8,7 +8,7 @@
     "iris_control_plane_url": {
       "type": "string",
       "title": "IRIS Control Plane URL",
-      "description": "URL du Control Plane IrisLabs (ex: https://control-plane.irislabs.io)",
+      "description": "URL du Control Plane IrisLabs (fourni par votre admin IRIS)",
       "required": true
     },
     "irislabs_app_id": {

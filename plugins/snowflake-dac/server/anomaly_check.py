@@ -11,13 +11,15 @@ import sys
 from datetime import date, timedelta
 
 # SDK path is handled by the parent server (snowflake_dac_server.py).
-# When run standalone, fall back to common locations.
+# When run standalone, fall back to env var or common locations.
 if not any("irislabs" in p for p in sys.path):
-    for _candidate in [
-        os.path.join(os.path.expanduser("~"), "Documents", "Claude", "Projects", "IRIS", "report-generator", ".irislabs", "sdk"),
+    _candidates = [
+        os.environ.get("IRISLABS_SDK_PATH"),
         os.path.join(os.path.expanduser("~"), "iris", "report-generator", ".irislabs", "sdk"),
-    ]:
-        if os.path.isdir(_candidate):
+        os.path.join(os.path.expanduser("~"), "report-generator", ".irislabs", "sdk"),
+    ]
+    for _candidate in _candidates:
+        if _candidate and os.path.isdir(_candidate):
             sys.path.insert(0, os.path.abspath(_candidate))
             break
 
@@ -199,7 +201,7 @@ def run_anomaly_check() -> str:
         if current_m is None:
             output_lines.append("⚠️  MNP — 1 anomalie")
             output_lines.append("   [BLOQUÉ] Vue R_RPT_PAID_MEDIA cassée (C.CHANNELS) — données indisponibles")
-            output_lines.append("   → Contacter Bradly")
+            output_lines.append("   → Contacter data engineering")
         else:
             baselines_m = [_mnp_week_metrics(s, e) for s, e in baseline_weeks]
             valid_baselines = [b for b in baselines_m if b is not None]

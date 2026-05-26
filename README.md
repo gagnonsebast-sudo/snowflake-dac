@@ -17,12 +17,12 @@ Depuis Claude Code web (`claude.ai/code`) :
 ## Prérequis
 
 - Python 3.10+
-- SDK IrisLabs disponible localement (l'un de ces chemins est auto-détecté) :
-  - `~/Documents/Claude/Projects/IRIS/report-generator/.irislabs/sdk/`
-  - `~/Desktop/Claude/Allstate/iris-app/.irislabs/sdk/`
-  - `~/iris/report-generator/.irislabs/sdk/`
-  - `~/report-generator/.irislabs/sdk/`
-- Pour un chemin custom, créer un symlink : `ln -s /path/to/sdk ${CLAUDE_PLUGIN_ROOT}/server/sdk`
+- SDK IrisLabs disponible localement. Le serveur le cherche dans cet ordre :
+  1. Env var `IRISLABS_SDK_PATH` (optionnel — peut être ajouté via les paramètres du plugin)
+  2. `${CLAUDE_PLUGIN_ROOT}/server/sdk/` (symlink local)
+  3. `~/iris/report-generator/.irislabs/sdk/`
+  4. `~/report-generator/.irislabs/sdk/`
+- Si votre SDK est ailleurs, créez un symlink ou définissez `IRISLABS_SDK_PATH`.
 
 ## Tools exposés
 
