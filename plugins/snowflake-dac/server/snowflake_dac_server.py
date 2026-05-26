@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime, timezone
 
 _here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _here)
@@ -24,18 +25,28 @@ for _candidate in _sdk_candidates:
         sys.path.insert(0, SDK_FOUND)
         break
 
+_ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+print(f"[{_ts}] snowflake-dac MCP server starting", file=sys.stderr)
+
 if not SDK_FOUND:
-    print("⚠️  IrisLabs SDK introuvable. Les outils retourneront une erreur jusqu'à ce que le SDK soit installé.", file=sys.stderr)
+    print(f"[{_ts}] ⚠️  IrisLabs SDK introuvable. Les outils retourneront une erreur jusqu'à ce que le SDK soit installé.", file=sys.stderr)
+else:
+    print(f"[{_ts}] SDK found: {SDK_FOUND}", file=sys.stderr)
 
 if not os.environ.get("IRIS_SDK_SECRET"):
-    print("⚠️  IRIS_SDK_SECRET non configuré. Les outils retourneront une erreur de config.", file=sys.stderr)
+    print(f"[{_ts}] ⚠️  IRIS_SDK_SECRET non configuré. Les outils retourneront une erreur de config.", file=sys.stderr)
 
 from mcp.server.fastmcp import FastMCP
 
 import allstate as allstate_mod
 import mnp as mnp_mod
+import shared
 
 mcp = FastMCP("snowflake-dac")
+
+if os.environ.get("IRIS_SDK_SECRET"):
+    _tok_valid, _tok_msg = shared.check_token_expiry()
+    print(f"[{_ts}] Token: {_tok_msg}", file=sys.stderr)
 
 
 def _guard(fn, **kwargs) -> str:
@@ -48,6 +59,9 @@ def _guard(fn, **kwargs) -> str:
         )
     if not os.environ.get("IRIS_SDK_SECRET"):
         return "❌ IRIS_SDK_SECRET non configuré dans les paramètres du plugin."
+    tok_valid, tok_msg = shared.check_token_expiry()
+    if not tok_valid:
+        return f"❌ {tok_msg}"
     try:
         return fn(**kwargs)
     except ImportError as e:
@@ -59,10 +73,41 @@ def _guard(fn, **kwargs) -> str:
     except Exception as e:
         msg = str(e).lower()
         if "auth" in msg or "login" in msg or "unauthorized" in msg:
-            return "❌ Authentification IrisLabs échouée. Vérifie IRIS_SDK_SECRET."
+            return "❌ Authentification IrisLabs échouée. Vérifie IRIS_SDK_SECRET (peut-être expiré)."
         if "timeout" in msg:
             return "❌ Snowflake timeout — essaye une plage de dates plus courte."
         return f"❌ Erreur : {e}"
+
+
+# ── Health check ──────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def iris_ping() -> str:
+    """Check IrisLabs SDK and token validity without hitting Snowflake. Run this first if tools seem broken."""
+    lines = ["## IRIS Health Check\n"]
+
+    if SDK_FOUND:
+        lines.append(f"✅ SDK : `{SDK_FOUND}`")
+    else:
+        lines.append("❌ SDK IrisLabs introuvable — vérifie IRISLABS_SDK_PATH")
+
+    secret = os.environ.get("IRIS_SDK_SECRET")
+    if secret:
+        tok_valid, tok_msg = shared.check_token_expiry()
+        icon = "✅" if tok_valid else "❌"
+        lines.append(f"{icon} Token : {tok_msg}")
+    else:
+        lines.append("❌ IRIS_SDK_SECRET non configuré")
+
+    cp_url = os.environ.get("IRIS_CONTROL_PLANE_URL", "")
+    lines.append(f"{'✅' if cp_url else '❌'} IRIS_CONTROL_PLANE_URL : {cp_url or 'non configuré'}")
+
+    app_id = os.environ.get("IRISLABS_APP_ID", "")
+    lines.append(f"{'✅' if app_id else '❌'} IRISLABS_APP_ID : {app_id or 'non configuré'}")
+
+    all_ok = bool(SDK_FOUND and secret and (not secret or shared.check_token_expiry()[0]) and cp_url and app_id)
+    lines.append(f"\n{'✅ Configuration OK — prêt pour les requêtes Snowflake' if all_ok else '❌ Configuration incomplète — voir les erreurs ci-dessus'}")
+    return "\n".join(lines)
 
 
 # ── Allstate tools ────────────────────────────────────────────────────────────

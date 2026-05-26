@@ -1,8 +1,12 @@
 """Shared helpers: date parsing, query guard, IrisLabs connection."""
 from __future__ import annotations
 
+import base64
+import json
+import os
 import re
-from datetime import date, timedelta
+import time
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 # ── Date helpers ──────────────────────────────────────────────────────────────
@@ -83,6 +87,32 @@ def guard_sql(sql: str, whitelist: set[str]) -> str:
         sql = sql.rstrip().rstrip(";") + f"\nLIMIT {MAX_ROWS}"
 
     return sql
+
+
+# ── Token validation ─────────────────────────────────────────────────────────
+
+def check_token_expiry() -> tuple[bool, str]:
+    """Decode JWT exp claim locally (no network). Returns (is_valid, message)."""
+    token = os.environ.get("IRIS_SDK_SECRET", "")
+    if not token:
+        return False, "IRIS_SDK_SECRET non configuré"
+    parts = token.split(".")
+    if len(parts) != 3:
+        return True, "Token présent (format non-JWT — impossible de vérifier l'expiration)"
+    try:
+        padding = (4 - len(parts[1]) % 4) % 4
+        payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * padding))
+        exp = payload.get("exp")
+        if exp is None:
+            return True, "Token présent (pas de claim exp)"
+        now = time.time()
+        exp_dt = datetime.fromtimestamp(exp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        if now > exp:
+            return False, f"Token expiré depuis {exp_dt} — rafraîchis avec : ~/.irislabs/bin/irislabs login"
+        remaining = int((exp - now) / 3600)
+        return True, f"Token valide jusqu'au {exp_dt} ({remaining}h restantes)"
+    except Exception:
+        return True, "Token présent (impossible de décoder le JWT)"
 
 
 # ── IrisLabs query wrapper ────────────────────────────────────────────────────
