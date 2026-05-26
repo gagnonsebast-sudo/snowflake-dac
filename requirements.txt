@@ -1,5 +1,0 @@
-# IrisLabs SDK is bundled in report-generator/.irislabs/sdk/
-# No external Snowflake connector — all queries via IrisLabs Control Plane
-
-# Standard library only — no additional dependencies required for the MCP server
-# If running tests or the anomaly check standalone, ensure PYTHONPATH includes the SDK path

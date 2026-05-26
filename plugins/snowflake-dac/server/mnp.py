@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from .shared import (
+from shared import (
     parse_date, default_date_range, current_week_start, prev_week_start,
     week_end, run_query, guard_sql, MNP_WHITELIST,
     fmt_cad, fmt_pct, delta_pct, safe_cpl, yesterday,
@@ -327,7 +327,7 @@ ORDER BY sessions DESC
 def mnp_wow(week_start: str | None = None) -> str:
     """Comparaison semaine vs semaine précédente MNP."""
     if week_start:
-        from .shared import parse_date, current_week_start
+        from shared import parse_date, current_week_start
         ws = parse_date(week_start, current_week_start())
     else:
         ws = current_week_start()
