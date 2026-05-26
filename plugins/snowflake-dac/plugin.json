@@ -1,7 +1,9 @@
 {
   "name": "snowflake-dac",
-  "version": "0.1.0",
-  "description": "Plugin Claude pour DAC Group — accès aux performances paid media Allstate & MNP (spend, leads, CPL, WoW, pacing) directement depuis vos conversations.",
+  "version": "0.2.0",
+  "description": "Plugin Claude pour DAC Group — accès aux performances paid media Allstate & MNP via Snowflake (spend, leads, CPL, WoW, pacing, anomalies).",
+  "repository": "https://github.com/gagnonsebast-sudo/snowflake-dac",
+  "skills": "./skills",
   "userConfig": {
     "iris_control_plane_url": {
       "type": "string",
@@ -18,20 +20,28 @@
     "iris_sdk_secret": {
       "type": "string",
       "title": "IRIS SDK Secret",
-      "description": "Secret d'authentification IrisLabs (IRIS_SDK_SECRET)",
+      "description": "Secret d'authentification IrisLabs (IRIS_SDK_SECRET) — token long-lived",
       "sensitive": true,
       "required": true
     }
   },
   "mcpServers": {
-    "snowflake_dac": {
+    "snowflake-dac": {
       "command": "python3",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/server.py"],
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server/snowflake_dac_server.py"],
       "env": {
         "IRIS_CONTROL_PLANE_URL": "${user_config.iris_control_plane_url}",
         "IRISLABS_APP_ID": "${user_config.irislabs_app_id}",
         "IRIS_SDK_SECRET": "${user_config.iris_sdk_secret}"
       }
     }
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "pip3 install -q 'mcp[cli]>=1.0.0' 2>/dev/null; exit 0"
+      }
+    ]
   }
 }

@@ -6,8 +6,8 @@
   "plugins": [
     {
       "name": "snowflake-dac",
-      "source": ".",
-      "description": "Plugin Claude pour DAC Group — accès aux performances paid media Allstate & MNP directement depuis vos conversations."
+      "source": "./plugins/snowflake-dac",
+      "description": "Plugin Claude pour DAC Group — accès aux performances paid media Allstate & MNP via Snowflake (spend, leads, CPL, WoW, pacing) directement depuis vos conversations."
     }
   ]
 }

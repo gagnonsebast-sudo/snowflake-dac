@@ -5,7 +5,7 @@ import re
 from datetime import date, timedelta
 from typing import Any
 
-from .shared import (
+from shared import (
     parse_date, default_date_range, current_week_start, prev_week_start,
     week_end, current_month_range, run_query, guard_sql, ALLSTATE_WHITELIST,
     fmt_cad, fmt_pct, delta_pct, safe_cpl, today, yesterday,

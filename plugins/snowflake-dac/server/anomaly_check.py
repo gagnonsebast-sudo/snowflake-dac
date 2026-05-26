@@ -10,9 +10,16 @@ import os
 import sys
 from datetime import date, timedelta
 
-_sdk_path = os.path.join(os.path.dirname(__file__), "..", "..", "report-generator", ".irislabs", "sdk")
-if os.path.isdir(_sdk_path):
-    sys.path.insert(0, os.path.abspath(_sdk_path))
+# SDK path is handled by the parent server (snowflake_dac_server.py).
+# When run standalone, fall back to common locations.
+if not any("irislabs" in p for p in sys.path):
+    for _candidate in [
+        os.path.join(os.path.expanduser("~"), "Documents", "Claude", "Projects", "IRIS", "report-generator", ".irislabs", "sdk"),
+        os.path.join(os.path.expanduser("~"), "iris", "report-generator", ".irislabs", "sdk"),
+    ]:
+        if os.path.isdir(_candidate):
+            sys.path.insert(0, os.path.abspath(_candidate))
+            break
 
 THRESHOLD = 0.15  # 15%
 
