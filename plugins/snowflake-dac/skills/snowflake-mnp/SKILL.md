@@ -27,7 +27,7 @@ The user asks about **MNP** paid media performance:
 
 `R_RPT_PAID_MEDIA` may return `invalid identifier 'C.CHANNELS'`. Every MNP tool wraps in try/except and returns this message when the error is detected:
 
-> "MNP data temporarily unavailable — view under maintenance (contact Bradly). Allstate is unaffected."
+> "MNP data temporarily unavailable — view under maintenance (contact data engineering). Allstate is unaffected."
 
 If you see this message, surface it to the user verbatim and do not retry.
 

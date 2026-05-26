@@ -11,16 +11,15 @@ sys.path.insert(0, _here)
 # Locate IrisLabs SDK — check candidate paths and add the first found to sys.path.
 # Never sys.exit() if missing: tools return an explicit error instead.
 _sdk_candidates = [
+    os.environ.get("IRISLABS_SDK_PATH"),
     os.path.join(_here, "sdk"),
     os.path.join(_here, "..", "..", "..", "..", "report-generator", ".irislabs", "sdk"),
-    os.path.join(os.path.expanduser("~"), "Documents", "Claude", "Projects", "IRIS", "report-generator", ".irislabs", "sdk"),
-    os.path.join(os.path.expanduser("~"), "Desktop", "Claude", "Allstate", "iris-app", ".irislabs", "sdk"),
     os.path.join(os.path.expanduser("~"), "iris", "report-generator", ".irislabs", "sdk"),
     os.path.join(os.path.expanduser("~"), "report-generator", ".irislabs", "sdk"),
 ]
 SDK_FOUND = None
 for _candidate in _sdk_candidates:
-    if os.path.isdir(_candidate):
+    if _candidate and os.path.isdir(_candidate):
         SDK_FOUND = os.path.abspath(_candidate)
         sys.path.insert(0, SDK_FOUND)
         break
