@@ -1,9 +1,7 @@
 {
   "name": "snowflake-dac",
-  "version": "0.2.1",
   "description": "Plugin Claude pour DAC Group — accès aux performances paid media Allstate & MNP via Snowflake (spend, leads, CPL, WoW, pacing, anomalies).",
   "repository": "https://github.com/gagnonsebast-sudo/snowflake-dac",
-  "skills": "./skills",
   "userConfig": {
     "iris_control_plane_url": {
       "type": "string",
@@ -35,17 +33,5 @@
         "IRIS_SDK_SECRET": "${user_config.iris_sdk_secret}"
       }
     }
-  },
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "pip3 install -q 'mcp[cli]>=1.0.0' 2>/dev/null; exit 0"
-          }
-        ]
-      }
-    ]
   }
 }

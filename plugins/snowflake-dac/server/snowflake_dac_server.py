@@ -36,7 +36,15 @@ else:
 if not os.environ.get("IRIS_SDK_SECRET"):
     print(f"[{_ts}] ⚠️  IRIS_SDK_SECRET non configuré. Les outils retourneront une erreur de config.", file=sys.stderr)
 
-from mcp.server.fastmcp import FastMCP
+try:
+    from mcp.server.fastmcp import FastMCP
+except ImportError:
+    import subprocess
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-q", "mcp[cli]>=1.0.0"],
+        capture_output=True, check=False,
+    )
+    from mcp.server.fastmcp import FastMCP
 
 import allstate as allstate_mod
 import mnp as mnp_mod
