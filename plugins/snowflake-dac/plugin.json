@@ -39,8 +39,12 @@
   "hooks": {
     "SessionStart": [
       {
-        "type": "command",
-        "command": "pip3 install -q 'mcp[cli]>=1.0.0' 2>/dev/null; exit 0"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pip3 install -q 'mcp[cli]>=1.0.0' 2>/dev/null; exit 0"
+          }
+        ]
       }
     ]
   }
