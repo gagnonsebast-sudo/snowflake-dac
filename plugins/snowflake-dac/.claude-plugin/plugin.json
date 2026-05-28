@@ -6,21 +6,24 @@
     "iris_control_plane_url": {
       "type": "string",
       "title": "IRIS Control Plane URL",
-      "description": "URL du Control Plane IrisLabs (fourni par votre admin IRIS)",
-      "required": true
+      "description": "URL du Control Plane IrisLabs (fourni par votre admin IRIS). Peut aussi être défini dans ~/.snowflake-dac-credentials.json",
+      "required": false,
+      "default": ""
     },
     "irislabs_app_id": {
       "type": "string",
       "title": "IrisLabs App ID",
-      "description": "App ID du projet IRIS (IRISLABS_APP_ID)",
-      "required": true
+      "description": "App ID du projet IRIS (IRISLABS_APP_ID). Peut aussi être défini dans ~/.snowflake-dac-credentials.json",
+      "required": false,
+      "default": ""
     },
     "iris_sdk_secret": {
       "type": "string",
       "title": "IRIS SDK Secret",
-      "description": "Secret d'authentification IrisLabs (IRIS_SDK_SECRET) — token long-lived",
+      "description": "Secret d'authentification IrisLabs (IRIS_SDK_SECRET). Peut aussi être défini dans ~/.snowflake-dac-credentials.json",
       "sensitive": true,
-      "required": true
+      "required": false,
+      "default": ""
     }
   },
   "mcpServers": {
