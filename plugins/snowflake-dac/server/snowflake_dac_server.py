@@ -2,6 +2,7 @@
 """MCP server for Snowflake DAC — Allstate & MNP paid media performance."""
 from __future__ import annotations
 
+import json
 import os
 import sys
 from datetime import datetime, timezone
@@ -9,11 +10,38 @@ from datetime import datetime, timezone
 _here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _here)
 
-# Locate IrisLabs SDK — check candidate paths and add the first found to sys.path.
-# Never sys.exit() if missing: tools return an explicit error instead.
+# ── Credential file fallback (Cowork: userConfig UI never appears) ────────────
+# Users create ~/Documents/Claude/.snowflake-dac-credentials.json on their Mac.
+# In Cowork VMs, ~/Documents/Claude/ is bind-mounted at ~/mnt/Documents--Claude/.
+_CREDS_SOURCE: str | None = None
+
+def _load_credentials_from_file() -> None:
+    global _CREDS_SOURCE
+    candidates = [
+        os.path.expanduser("~/mnt/Documents--Claude/.snowflake-dac-credentials.json"),
+        os.path.expanduser("~/Documents/Claude/.snowflake-dac-credentials.json"),
+        os.path.expanduser("~/.snowflake-dac-credentials.json"),
+    ]
+    for path in candidates:
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            for key, val in data.items():
+                if not os.environ.get(key):
+                    os.environ[key] = str(val)
+            _CREDS_SOURCE = path
+            return
+        except Exception:
+            continue
+
+_load_credentials_from_file()
+
+# ── IrisLabs SDK ──────────────────────────────────────────────────────────────
+# Locate SDK — check candidate paths; never sys.exit() if missing.
 _sdk_candidates = [
     os.environ.get("IRISLABS_SDK_PATH"),
     os.path.join(_here, "sdk"),
+    os.path.join(os.path.expanduser("~"), "mnt", "Documents--Claude", ".irislabs", "sdk"),
     os.path.join(_here, "..", "..", "..", "..", "report-generator", ".irislabs", "sdk"),
     os.path.join(os.path.expanduser("~"), "iris", "report-generator", ".irislabs", "sdk"),
     os.path.join(os.path.expanduser("~"), "report-generator", ".irislabs", "sdk"),
@@ -27,9 +55,13 @@ for _candidate in _sdk_candidates:
 
 _ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 print(f"[{_ts}] snowflake-dac MCP server starting", file=sys.stderr)
+if _CREDS_SOURCE:
+    print(f"[{_ts}] Credentials: loaded from file {_CREDS_SOURCE}", file=sys.stderr)
+else:
+    print(f"[{_ts}] Credentials: from env vars (or not set)", file=sys.stderr)
 
 if not SDK_FOUND:
-    print(f"[{_ts}] ⚠️  IrisLabs SDK introuvable. Les outils retourneront une erreur jusqu'à ce que le SDK soit installé.", file=sys.stderr)
+    print(f"[{_ts}] ⚠️  IrisLabs SDK introuvable. Les outils retourneront une erreur.", file=sys.stderr)
 else:
     print(f"[{_ts}] SDK found: {SDK_FOUND}", file=sys.stderr)
 
@@ -105,10 +137,20 @@ def iris_ping() -> str:
     """Check IrisLabs SDK and token validity without hitting Snowflake. Run this first if tools seem broken."""
     lines = ["## IRIS Health Check\n"]
 
+    # Credentials source
+    if _CREDS_SOURCE:
+        lines.append(f"📁 Credentials source : fichier `{_CREDS_SOURCE}`")
+    else:
+        lines.append("📁 Credentials source : variables d'environnement (userConfig ou .env)")
+
     if SDK_FOUND:
         lines.append(f"✅ SDK : `{SDK_FOUND}`")
     else:
-        lines.append("❌ SDK IrisLabs introuvable — vérifie IRISLABS_SDK_PATH")
+        lines.append(
+            "❌ SDK IrisLabs introuvable\n"
+            "   → Ajouter `IRISLABS_SDK_PATH` dans `~/.snowflake-dac-credentials.json`\n"
+            "   → ou copier le SDK dans `~/mnt/Documents--Claude/.irislabs/sdk/`"
+        )
 
     secret = os.environ.get("IRIS_SDK_SECRET")
     if secret:
@@ -116,7 +158,10 @@ def iris_ping() -> str:
         icon = "✅" if tok_valid else "❌"
         lines.append(f"{icon} Token : {tok_msg}")
     else:
-        lines.append("❌ IRIS_SDK_SECRET non configuré")
+        lines.append(
+            "❌ IRIS_SDK_SECRET non configuré\n"
+            "   → Créer `~/Documents/Claude/.snowflake-dac-credentials.json` avec les clés IrisLabs"
+        )
 
     cp_url = os.environ.get("IRIS_CONTROL_PLANE_URL", "")
     lines.append(f"{'✅' if cp_url else '❌'} IRIS_CONTROL_PLANE_URL : {cp_url or 'non configuré'}")
@@ -126,6 +171,22 @@ def iris_ping() -> str:
 
     all_ok = bool(SDK_FOUND and secret and (not secret or shared.check_token_expiry()[0]) and cp_url and app_id)
     lines.append(f"\n{'✅ Configuration OK — prêt pour les requêtes Snowflake' if all_ok else '❌ Configuration incomplète — voir les erreurs ci-dessus'}")
+
+    if not all_ok and not _CREDS_SOURCE:
+        lines.append(
+            "\n💡 **Cowork / VM** : crée ce fichier sur ton Mac :\n"
+            "```\n"
+            "cat > ~/Documents/Claude/.snowflake-dac-credentials.json << 'EOF'\n"
+            "{\n"
+            '  "IRIS_CONTROL_PLANE_URL": "https://irislabs.dacgroup.com",\n'
+            '  "IRISLABS_APP_ID": "1",\n'
+            '  "IRIS_SDK_SECRET": "eyJ...",\n'
+            '  "IRISLABS_SDK_PATH": "/chemin/vers/.irislabs/sdk"\n'
+            "}\n"
+            "EOF\n"
+            "chmod 600 ~/Documents/Claude/.snowflake-dac-credentials.json\n"
+            "```"
+        )
     return "\n".join(lines)
 
 
