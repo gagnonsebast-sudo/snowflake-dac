@@ -108,7 +108,7 @@ def check_token_expiry() -> tuple[bool, str]:
         now = time.time()
         exp_dt = datetime.fromtimestamp(exp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         if now > exp:
-            return False, f"Token expiré depuis {exp_dt} — rafraîchis avec : ~/.irislabs/bin/irislabs login"
+            return False, f"Token expiré depuis {exp_dt} — appelle l'outil `iris_refresh` (ou : ~/.irislabs/bin/irislabs auth login)"
         remaining = int((exp - now) / 3600)
         return True, f"Token valide jusqu'au {exp_dt} ({remaining}h restantes)"
     except Exception:

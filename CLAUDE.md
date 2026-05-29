@@ -51,7 +51,7 @@ plugin issues are an expired IrisLabs JWT (they last ~24h).
 3. `iris_ping` is the read-only diagnostic — run it to see SDK path, token expiry,
    and which source the token came from, without hitting Snowflake.
 
-Only escalate to manual steps (`~/.irislabs/bin/irislabs login` in a terminal, or
+Only escalate to manual steps (`~/.irislabs/bin/irislabs auth login` in a terminal, or
 editing `~/Documents/Claude/.snowflake-dac-credentials.json`) if `iris_refresh`
 reports the CLI is unreachable.
 
