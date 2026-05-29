@@ -66,13 +66,31 @@ def _load_static_credentials() -> None:
         return
 
 
+def _iris_config_block(data: dict) -> dict:
+    """Return the credential-bearing block of an IrisLabs config.json.
+
+    v2 (CLI 2.x): { "ActiveEnvironment": "prod", "Environments": { "prod": {...} } }
+        → the active environment block (or the first one if ActiveEnvironment is absent).
+    v1 (older):   flat { "Token": ..., "ControlPlaneUrl": ... } → the dict itself.
+    """
+    envs = data.get("Environments")
+    if isinstance(envs, dict) and envs:
+        active = data.get("ActiveEnvironment")
+        if active and active in envs and isinstance(envs[active], dict):
+            return envs[active]
+        for block in envs.values():
+            if isinstance(block, dict):
+                return block
+    return data
+
+
 def _sync_token_from_iris_config() -> bool:
     """Re-read the IrisLabs CLI config and refresh IRIS_SDK_SECRET from it.
 
     The token rotates on every `irislabs auth login`, so it always overwrites; URL and
     app id only fill gaps. Returns True if a token was loaded. Safe to call
     repeatedly — this is what makes a freshly-refreshed token visible without a
-    Claude Code restart.
+    Claude Code restart. Handles both the v2 nested (Environments) and v1 flat layouts.
     """
     global _IRIS_CONFIG_SOURCE
     for path in _IRIS_CONFIG_PATHS:
@@ -81,9 +99,10 @@ def _sync_token_from_iris_config() -> bool:
                 data = json.load(f)
         except Exception:
             continue
+        block = _iris_config_block(data)
         loaded = False
         for raw_key, env_key in _IRIS_CONFIG_KEY_MAP.items():
-            val = data.get(raw_key)
+            val = block.get(raw_key)
             if not val:
                 continue
             if env_key == "IRIS_SDK_SECRET":
