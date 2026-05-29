@@ -210,6 +210,23 @@ def _guard(fn, **kwargs) -> str:
             f"❌ {tok_msg}\n"
             "→ Appelle l'outil `iris_refresh` pour rafraîchir le token sans quitter Claude."
         )
+    app_id = os.environ.get("IRISLABS_APP_ID", "").strip()
+    if not app_id:
+        return (
+            "❌ IRISLABS_APP_ID non configuré.\n"
+            "→ Ajoute ton App ID IrisLabs (GUID, ex: b5d26977-481a-4f61-bf7c-b2f8cedf47fe) "
+            "dans le champ 'IrisLabs App ID' du plugin, ou dans "
+            "`~/Documents/Claude/.snowflake-dac-credentials.json` (clé `IRISLABS_APP_ID`).\n"
+            "→ Lance `iris_ping` pour diagnostiquer la configuration complète."
+        )
+    if app_id == "1":
+        return (
+            "❌ IRISLABS_APP_ID est '1' — c'est l'ID racine du tenant, pas un App ID valide.\n"
+            "→ Utilise le GUID de ton app (ex: b5d26977-481a-4f61-bf7c-b2f8cedf47fe).\n"
+            "→ Pour trouver tes apps : `irislabs app list` dans le terminal.\n"
+            "→ Mets à jour le champ 'IrisLabs App ID' dans les paramètres du plugin "
+            "ou dans `~/Documents/Claude/.snowflake-dac-credentials.json`."
+        )
     try:
         return fn(**kwargs)
     except ImportError as e:
@@ -220,6 +237,13 @@ def _guard(fn, **kwargs) -> str:
         return f"❌ Input invalide : {e}"
     except Exception as e:
         msg = str(e).lower()
+        if "not found for app" in msg or "external snowflake database" in msg:
+            return (
+                f"❌ App ID IrisLabs invalide ou sans accès Snowflake (IRISLABS_APP_ID='{app_id}').\n"
+                "→ Vérifie que l'app a les bindings Snowflake requis (ALLSTATE / MNP).\n"
+                "→ Pour lister les apps disponibles : `irislabs app list` dans le terminal.\n"
+                f"→ Erreur SDK : {e}"
+            )
         if "auth" in msg or "login" in msg or "unauthorized" in msg:
             return "❌ Authentification IrisLabs échouée. Vérifie IRIS_SDK_SECRET (peut-être expiré)."
         if "timeout" in msg:
@@ -353,10 +377,20 @@ def iris_ping() -> str:
     cp_url = os.environ.get("IRIS_CONTROL_PLANE_URL", "")
     lines.append(f"{'✅' if cp_url else '❌'} IRIS_CONTROL_PLANE_URL : {cp_url or 'non configuré'}")
 
-    app_id = os.environ.get("IRISLABS_APP_ID", "")
-    lines.append(f"{'✅' if app_id else '❌'} IRISLABS_APP_ID : {app_id or 'non configuré'}")
+    app_id = os.environ.get("IRISLABS_APP_ID", "").strip()
+    if not app_id:
+        lines.append("❌ IRISLABS_APP_ID : non configuré")
+    elif app_id == "1":
+        lines.append(
+            "⚠️  IRISLABS_APP_ID : '1' — valeur incorrecte (ID racine du tenant, pas un App GUID)\n"
+            "   → Utilise le GUID de ton app (ex: b5d26977-481a-4f61-bf7c-b2f8cedf47fe)\n"
+            "   → Pour lister tes apps : `irislabs app list`"
+        )
+    else:
+        lines.append(f"✅ IRISLABS_APP_ID : {app_id}")
 
-    all_ok = bool(SDK_FOUND and secret and (not secret or shared.check_token_expiry()[0]) and cp_url and app_id)
+    app_id_ok = bool(app_id and app_id != "1")
+    all_ok = bool(SDK_FOUND and secret and (not secret or shared.check_token_expiry()[0]) and cp_url and app_id_ok)
     lines.append(f"\n{'✅ Configuration OK — prêt pour les requêtes Snowflake' if all_ok else '❌ Configuration incomplète — voir les erreurs ci-dessus'}")
 
     if not all_ok and not _CREDS_SOURCE:
@@ -366,7 +400,7 @@ def iris_ping() -> str:
             "cat > ~/Documents/Claude/.snowflake-dac-credentials.json << 'EOF'\n"
             "{\n"
             '  "IRIS_CONTROL_PLANE_URL": "https://irislabs.dacgroup.com",\n'
-            '  "IRISLABS_APP_ID": "1",\n'
+            '  "IRISLABS_APP_ID": "<GUID-de-ton-app-irislabs>",\n'
             '  "IRIS_SDK_SECRET": "eyJ...",\n'
             '  "IRISLABS_SDK_PATH": "/chemin/vers/.irislabs/sdk"\n'
             "}\n"
