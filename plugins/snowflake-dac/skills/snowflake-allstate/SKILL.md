@@ -58,6 +58,15 @@ For specific dimensions, use the dedicated tool (region, language, category, etc
 ### Step 3 — Present the result
 The tools return pre-formatted markdown text. Surface it directly. Highlight any WoW delta beyond ±10% as worth investigating.
 
+## Troubleshooting — first reflex if a tool bugs
+
+If any tool errors, returns nothing, reports an expired token / auth failure, or the
+tools seem to disappear: **call `iris_refresh` before anything else.** Most issues are
+an expired IrisLabs JWT (~24h lifetime). `iris_refresh` opens the browser login and
+reads the fresh token automatically — no restart, no copy/paste. After the user logs
+in, retry the original request. Use `iris_ping` for a read-only diagnostic (SDK path,
+token expiry, source).
+
 ## Output Format
 
 The tools format output as markdown tables / structured text. Always preserve the formatting in your reply.
