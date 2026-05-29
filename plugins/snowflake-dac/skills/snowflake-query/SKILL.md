@@ -40,6 +40,14 @@ Use the table names without database prefix — they're resolved automatically p
 ### Step 3 — Submit and surface
 Output is shown as a table (max 100 lines displayed). If truncated, the tool indicates how many rows were returned.
 
+## Troubleshooting — first reflex if a tool bugs
+
+If a query errors, returns nothing, reports an expired token / auth failure, or the
+tools seem to disappear: **call `iris_refresh` before anything else.** Most issues are
+an expired IrisLabs JWT (~24h lifetime). `iris_refresh` opens the browser login and
+reads the fresh token automatically — no restart, no copy/paste. After the user logs
+in, retry the query. Use `iris_ping` for a read-only diagnostic.
+
 ## Limitations
 
 - No joins across Allstate and MNP (separate Snowflake accounts).

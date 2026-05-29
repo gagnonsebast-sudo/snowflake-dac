@@ -56,6 +56,17 @@ If you receive the blocker message, stop and report it. Do not attempt to retry 
 ### Step 3 — Present the result
 Surface the markdown output directly. Highlight Facebook Leads as social-only.
 
+## Troubleshooting — first reflex if a tool bugs
+
+If a tool errors, returns nothing, reports an expired token / auth failure, or the
+tools seem to disappear: **call `iris_refresh` before anything else.** Most issues are
+an expired IrisLabs JWT (~24h lifetime). `iris_refresh` opens the browser login and
+reads the fresh token automatically — no restart, no copy/paste. After the user logs
+in, retry the request. Use `iris_ping` for a read-only diagnostic.
+
+Exception: the `C.CHANNELS` blocker message above is NOT a token issue — surface it
+verbatim and do not call `iris_refresh`.
+
 ## Limitations
 
 - MNP includes Econofitness and Mr. Lube which are not yet in Snowflake — those clients will return no data.
