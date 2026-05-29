@@ -20,7 +20,7 @@ sys.path.insert(0, _here)
 #      Sets URL / app id / SDK path / (optionally) a token.
 #
 #   2. IrisLabs CLI config (~/.irislabs/config.json) — the LIVE token store. The
-#      `irislabs login` command rotates the token here. We read it at startup AND
+#      `irislabs auth login` command rotates the token here. We read it at startup AND
 #      re-read it on expiry, so after a refresh the next tool call picks up the
 #      fresh token automatically — no copy/paste, no Claude Code restart.
 
@@ -69,7 +69,7 @@ def _load_static_credentials() -> None:
 def _sync_token_from_iris_config() -> bool:
     """Re-read the IrisLabs CLI config and refresh IRIS_SDK_SECRET from it.
 
-    The token rotates on every `irislabs login`, so it always overwrites; URL and
+    The token rotates on every `irislabs auth login`, so it always overwrites; URL and
     app id only fill gaps. Returns True if a token was loaded. Safe to call
     repeatedly — this is what makes a freshly-refreshed token visible without a
     Claude Code restart.
@@ -183,7 +183,7 @@ def _guard(fn, **kwargs) -> str:
         )
     tok_valid, tok_msg = shared.check_token_expiry()
     if not tok_valid:
-        # The user may have just run `irislabs login` — re-read the live config.
+        # The user may have just run `irislabs auth login` — re-read the live config.
         _sync_token_from_iris_config()
         tok_valid, tok_msg = shared.check_token_expiry()
     if not tok_valid:
@@ -221,9 +221,18 @@ def _find_irislabs_cli() -> str | None:
     return None
 
 
+# IrisLabs CLI login subcommands, tried in order. The CLI uses `auth login`;
+# older builds used a bare `login`. We try the modern form first.
+_IRIS_LOGIN_COMMANDS = [
+    ["auth", "login"],
+    ["login"],
+]
+_MANUAL_LOGIN_HINT = "~/.irislabs/bin/irislabs auth login"
+
+
 @mcp.tool()
 def iris_refresh() -> str:
-    """Rafraîchit le token IrisLabs expiré en lançant `irislabs login` (ouvre le navigateur).
+    """Rafraîchit le token IrisLabs expiré en lançant `irislabs auth login` (ouvre le navigateur).
 
     Utilise cet outil quand un autre outil signale un token expiré. Après le login,
     le nouveau token est lu automatiquement — pas besoin de redémarrer Claude Code
@@ -240,37 +249,48 @@ def iris_refresh() -> str:
         return (
             "❌ CLI `irislabs` introuvable.\n"
             "Lance manuellement dans le terminal de ton Mac :\n"
-            "```\n~/.irislabs/bin/irislabs login\n```\n"
+            f"```\n{_MANUAL_LOGIN_HINT}\n```\n"
             "Puis relance ta requête (le token sera lu automatiquement)."
         )
 
-    try:
-        proc = subprocess.run([cli, "login"], capture_output=True, text=True, timeout=120)
-    except subprocess.TimeoutExpired:
+    last_detail = ""
+    for sub in _IRIS_LOGIN_COMMANDS:
+        try:
+            proc = subprocess.run([cli, *sub], capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            # Login flow is open in the browser but didn't return in time.
+            _sync_token_from_iris_config()
+            valid, msg = shared.check_token_expiry()
+            if valid:
+                return f"✅ Token rafraîchi — {msg}"
+            return (
+                "⏳ La page de connexion est ouverte dans ton navigateur mais le login "
+                "n'a pas terminé à temps. Complète-le, puis relance ta requête — le "
+                "nouveau token sera lu automatiquement."
+            )
+        except Exception as e:
+            last_detail = str(e)
+            continue
+
+        # Did this command produce a valid token?
         _sync_token_from_iris_config()
         valid, msg = shared.check_token_expiry()
         if valid:
-            return f"✅ Token rafraîchi — {msg}"
-        return (
-            "⏳ La page de connexion est ouverte dans ton navigateur mais le login "
-            "n'a pas terminé à temps. Complète-le, puis relance ta requête — le "
-            "nouveau token sera lu automatiquement."
-        )
-    except Exception as e:
-        return (
-            f"❌ Échec du lancement de `irislabs login` : {e}\n"
-            "Lance manuellement : `~/.irislabs/bin/irislabs login`"
-        )
+            return f"✅ Token rafraîchi (`irislabs {' '.join(sub)}`) — {msg}"
 
-    _sync_token_from_iris_config()
-    valid, msg = shared.check_token_expiry()
-    if valid:
-        return f"✅ Token rafraîchi — {msg}"
-    detail = (proc.stderr or proc.stdout or "").strip()
+        detail = (proc.stderr or proc.stdout or "").strip()
+        # If the subcommand isn't recognized, try the next form; otherwise remember it.
+        if "unknown command" in detail.lower() or "unknown subcommand" in detail.lower():
+            last_detail = detail
+            continue
+        last_detail = detail
+        # A recognized command that ran but didn't yield a valid token — stop trying others.
+        break
+
     return (
         "❌ Le refresh n'a pas produit de token valide.\n"
-        + (f"Sortie CLI : {detail}\n" if detail else "")
-        + "Lance manuellement : `~/.irislabs/bin/irislabs login`"
+        + (f"Sortie CLI : {last_detail}\n" if last_detail else "")
+        + f"Lance manuellement : `{_MANUAL_LOGIN_HINT}`"
     )
 
 
