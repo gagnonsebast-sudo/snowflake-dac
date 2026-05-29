@@ -4,37 +4,101 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
 
 _here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _here)
 
-# ── Credential file fallback (Cowork: userConfig UI never appears) ────────────
-# Users create ~/Documents/Claude/.snowflake-dac-credentials.json on their Mac.
-# In Cowork VMs, ~/Documents/Claude/ is bind-mounted at ~/mnt/Documents--Claude/.
-_CREDS_SOURCE: str | None = None
+# ── Credentials ───────────────────────────────────────────────────────────────
+# Two layered sources so the user never has to copy/paste tokens manually:
+#
+#   1. Static credentials file (.snowflake-dac-credentials.json) — for Cowork VMs
+#      where the userConfig UI never appears and the IrisLabs CLI isn't reachable.
+#      Sets URL / app id / SDK path / (optionally) a token.
+#
+#   2. IrisLabs CLI config (~/.irislabs/config.json) — the LIVE token store. The
+#      `irislabs login` command rotates the token here. We read it at startup AND
+#      re-read it on expiry, so after a refresh the next tool call picks up the
+#      fresh token automatically — no copy/paste, no Claude Code restart.
 
-def _load_credentials_from_file() -> None:
+_CREDS_FILE_PATHS = [
+    os.path.expanduser("~/mnt/Documents--Claude/.snowflake-dac-credentials.json"),
+    os.path.expanduser("~/Documents/Claude/.snowflake-dac-credentials.json"),
+    os.path.expanduser("~/.snowflake-dac-credentials.json"),
+]
+
+# IrisLabs CLI config: native key → our env var. Token always overwrites (it rotates).
+_IRIS_CONFIG_PATHS = [
+    os.path.expanduser("~/.irislabs/config.json"),
+    os.path.expanduser("~/mnt/Documents--Claude/.irislabs/config.json"),
+]
+_IRIS_CONFIG_KEY_MAP = {
+    "Token": "IRIS_SDK_SECRET",
+    "token": "IRIS_SDK_SECRET",
+    "ControlPlaneUrl": "IRIS_CONTROL_PLANE_URL",
+    "ControlPlaneURL": "IRIS_CONTROL_PLANE_URL",
+    "controlPlaneUrl": "IRIS_CONTROL_PLANE_URL",
+    "AppId": "IRISLABS_APP_ID",
+    "AppID": "IRISLABS_APP_ID",
+    "appId": "IRISLABS_APP_ID",
+}
+
+_CREDS_SOURCE: str | None = None         # static file that was loaded
+_IRIS_CONFIG_SOURCE: str | None = None   # live CLI config that supplied the token
+
+
+def _load_static_credentials() -> None:
+    """Load the static credentials file once. Only fills vars not already set."""
     global _CREDS_SOURCE
-    candidates = [
-        os.path.expanduser("~/mnt/Documents--Claude/.snowflake-dac-credentials.json"),
-        os.path.expanduser("~/Documents/Claude/.snowflake-dac-credentials.json"),
-        os.path.expanduser("~/.snowflake-dac-credentials.json"),
-    ]
-    for path in candidates:
+    for path in _CREDS_FILE_PATHS:
         try:
             with open(path) as f:
                 data = json.load(f)
-            for key, val in data.items():
-                if not os.environ.get(key):
-                    os.environ[key] = str(val)
-            _CREDS_SOURCE = path
-            return
         except Exception:
             continue
+        for key, val in data.items():
+            if not os.environ.get(key):
+                os.environ[key] = str(val)
+        _CREDS_SOURCE = path
+        return
 
-_load_credentials_from_file()
+
+def _sync_token_from_iris_config() -> bool:
+    """Re-read the IrisLabs CLI config and refresh IRIS_SDK_SECRET from it.
+
+    The token rotates on every `irislabs login`, so it always overwrites; URL and
+    app id only fill gaps. Returns True if a token was loaded. Safe to call
+    repeatedly — this is what makes a freshly-refreshed token visible without a
+    Claude Code restart.
+    """
+    global _IRIS_CONFIG_SOURCE
+    for path in _IRIS_CONFIG_PATHS:
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except Exception:
+            continue
+        loaded = False
+        for raw_key, env_key in _IRIS_CONFIG_KEY_MAP.items():
+            val = data.get(raw_key)
+            if not val:
+                continue
+            if env_key == "IRIS_SDK_SECRET":
+                os.environ[env_key] = str(val)
+                loaded = True
+            elif not os.environ.get(env_key):
+                os.environ[env_key] = str(val)
+        if loaded:
+            _IRIS_CONFIG_SOURCE = path
+            return True
+    return False
+
+
+_load_static_credentials()
+_sync_token_from_iris_config()
 
 # ── IrisLabs SDK ──────────────────────────────────────────────────────────────
 # Locate SDK — check candidate paths; never sys.exit() if missing.
@@ -55,7 +119,9 @@ for _candidate in _sdk_candidates:
 
 _ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 print(f"[{_ts}] snowflake-dac MCP server starting", file=sys.stderr)
-if _CREDS_SOURCE:
+if _IRIS_CONFIG_SOURCE:
+    print(f"[{_ts}] Token: live from IrisLabs CLI config {_IRIS_CONFIG_SOURCE}", file=sys.stderr)
+elif _CREDS_SOURCE:
     print(f"[{_ts}] Credentials: loaded from file {_CREDS_SOURCE}", file=sys.stderr)
 else:
     print(f"[{_ts}] Credentials: from env vars (or not set)", file=sys.stderr)
@@ -109,10 +175,22 @@ def _guard(fn, **kwargs) -> str:
             "ou crée un lien symbolique vers ${CLAUDE_PLUGIN_ROOT}/server/sdk."
         )
     if not os.environ.get("IRIS_SDK_SECRET"):
-        return "❌ IRIS_SDK_SECRET non configuré dans les paramètres du plugin."
+        _sync_token_from_iris_config()
+    if not os.environ.get("IRIS_SDK_SECRET"):
+        return (
+            "❌ IRIS_SDK_SECRET non configuré. Lance l'outil `iris_refresh` "
+            "ou configure les credentials IrisLabs."
+        )
     tok_valid, tok_msg = shared.check_token_expiry()
     if not tok_valid:
-        return f"❌ {tok_msg}"
+        # The user may have just run `irislabs login` — re-read the live config.
+        _sync_token_from_iris_config()
+        tok_valid, tok_msg = shared.check_token_expiry()
+    if not tok_valid:
+        return (
+            f"❌ {tok_msg}\n"
+            "→ Appelle l'outil `iris_refresh` pour rafraîchir le token sans quitter Claude."
+        )
     try:
         return fn(**kwargs)
     except ImportError as e:
@@ -132,13 +210,81 @@ def _guard(fn, **kwargs) -> str:
 
 # ── Health check ──────────────────────────────────────────────────────────────
 
+def _find_irislabs_cli() -> str | None:
+    """Locate the irislabs CLI binary, if present."""
+    for candidate in [
+        os.path.expanduser("~/.irislabs/bin/irislabs"),
+        shutil.which("irislabs") if shutil.which("irislabs") else None,
+    ]:
+        if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+@mcp.tool()
+def iris_refresh() -> str:
+    """Rafraîchit le token IrisLabs expiré en lançant `irislabs login` (ouvre le navigateur).
+
+    Utilise cet outil quand un autre outil signale un token expiré. Après le login,
+    le nouveau token est lu automatiquement — pas besoin de redémarrer Claude Code
+    ni de copier le token à la main.
+    """
+    # Maybe it was already refreshed externally — re-read the live config first.
+    _sync_token_from_iris_config()
+    valid, msg = shared.check_token_expiry()
+    if valid:
+        return f"✅ Token déjà valide — {msg}"
+
+    cli = _find_irislabs_cli()
+    if not cli:
+        return (
+            "❌ CLI `irislabs` introuvable.\n"
+            "Lance manuellement dans le terminal de ton Mac :\n"
+            "```\n~/.irislabs/bin/irislabs login\n```\n"
+            "Puis relance ta requête (le token sera lu automatiquement)."
+        )
+
+    try:
+        proc = subprocess.run([cli, "login"], capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        _sync_token_from_iris_config()
+        valid, msg = shared.check_token_expiry()
+        if valid:
+            return f"✅ Token rafraîchi — {msg}"
+        return (
+            "⏳ La page de connexion est ouverte dans ton navigateur mais le login "
+            "n'a pas terminé à temps. Complète-le, puis relance ta requête — le "
+            "nouveau token sera lu automatiquement."
+        )
+    except Exception as e:
+        return (
+            f"❌ Échec du lancement de `irislabs login` : {e}\n"
+            "Lance manuellement : `~/.irislabs/bin/irislabs login`"
+        )
+
+    _sync_token_from_iris_config()
+    valid, msg = shared.check_token_expiry()
+    if valid:
+        return f"✅ Token rafraîchi — {msg}"
+    detail = (proc.stderr or proc.stdout or "").strip()
+    return (
+        "❌ Le refresh n'a pas produit de token valide.\n"
+        + (f"Sortie CLI : {detail}\n" if detail else "")
+        + "Lance manuellement : `~/.irislabs/bin/irislabs login`"
+    )
+
+
 @mcp.tool()
 def iris_ping() -> str:
     """Check IrisLabs SDK and token validity without hitting Snowflake. Run this first if tools seem broken."""
+    # Pick up any token refreshed since startup.
+    _sync_token_from_iris_config()
     lines = ["## IRIS Health Check\n"]
 
     # Credentials source
-    if _CREDS_SOURCE:
+    if _IRIS_CONFIG_SOURCE:
+        lines.append(f"🔄 Token source : IrisLabs CLI (live) `{_IRIS_CONFIG_SOURCE}`")
+    elif _CREDS_SOURCE:
         lines.append(f"📁 Credentials source : fichier `{_CREDS_SOURCE}`")
     else:
         lines.append("📁 Credentials source : variables d'environnement (userConfig ou .env)")
@@ -157,10 +303,12 @@ def iris_ping() -> str:
         tok_valid, tok_msg = shared.check_token_expiry()
         icon = "✅" if tok_valid else "❌"
         lines.append(f"{icon} Token : {tok_msg}")
+        if not tok_valid:
+            lines.append("   → Appelle l'outil `iris_refresh` pour rafraîchir (ouvre le navigateur).")
     else:
         lines.append(
             "❌ IRIS_SDK_SECRET non configuré\n"
-            "   → Créer `~/Documents/Claude/.snowflake-dac-credentials.json` avec les clés IrisLabs"
+            "   → Appelle `iris_refresh`, ou crée `~/Documents/Claude/.snowflake-dac-credentials.json`"
         )
 
     cp_url = os.environ.get("IRIS_CONTROL_PLANE_URL", "")
