@@ -13,16 +13,17 @@ _here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _here)
 
 # ── Credentials ───────────────────────────────────────────────────────────────
-# Two layered sources so the user never has to copy/paste tokens manually:
+# Priority order for IRIS_SDK_SECRET:
+#   1. Credentials file (.snowflake-dac-credentials.json) — explicit SDK secret tied
+#      to a specific app via IRISLABS_APP_ID. Takes highest priority; the IrisLabs CLI
+#      token must NEVER overwrite it, because the CLI JWT carries resource_id="1" (tenant
+#      root) which would override the app GUID and break all Snowflake queries.
+#   2. Env var from plugin userConfig — also explicit, same rule applies.
+#   3. IrisLabs CLI config (~/.irislabs/config.json) — CLI JWT (resource_id="1"). Used
+#      as fallback only when no explicit SDK secret is available. `iris_refresh` rotates
+#      this token automatically via `irislabs auth login`.
 #
-#   1. Static credentials file (.snowflake-dac-credentials.json) — for Cowork VMs
-#      where the userConfig UI never appears and the IrisLabs CLI isn't reachable.
-#      Sets URL / app id / SDK path / (optionally) a token.
-#
-#   2. IrisLabs CLI config (~/.irislabs/config.json) — the LIVE token store. The
-#      `irislabs auth login` command rotates the token here. We read it at startup AND
-#      re-read it on expiry, so after a refresh the next tool call picks up the
-#      fresh token automatically — no copy/paste, no Claude Code restart.
+# IRISLABS_APP_ID, IRIS_CONTROL_PLANE_URL: filled from the first source that has them.
 
 _CREDS_FILE_PATHS = [
     os.path.expanduser("~/mnt/Documents--Claude/.snowflake-dac-credentials.json"),
@@ -30,7 +31,6 @@ _CREDS_FILE_PATHS = [
     os.path.expanduser("~/.snowflake-dac-credentials.json"),
 ]
 
-# IrisLabs CLI config: native key → our env var. Token always overwrites (it rotates).
 _IRIS_CONFIG_PATHS = [
     os.path.expanduser("~/.irislabs/config.json"),
     os.path.expanduser("~/mnt/Documents--Claude/.irislabs/config.json"),
@@ -47,12 +47,13 @@ _IRIS_CONFIG_KEY_MAP = {
 }
 
 _CREDS_SOURCE: str | None = None         # static file that was loaded
+_CREDS_HAS_TOKEN: bool = False           # True if the static file contained IRIS_SDK_SECRET
 _IRIS_CONFIG_SOURCE: str | None = None   # live CLI config that supplied the token
 
 
 def _load_static_credentials() -> None:
     """Load the static credentials file once. Only fills vars not already set."""
-    global _CREDS_SOURCE
+    global _CREDS_SOURCE, _CREDS_HAS_TOKEN
     for path in _CREDS_FILE_PATHS:
         try:
             with open(path) as f:
@@ -62,6 +63,7 @@ def _load_static_credentials() -> None:
         for key, val in data.items():
             if not os.environ.get(key):
                 os.environ[key] = str(val)
+        _CREDS_HAS_TOKEN = bool(data.get("IRIS_SDK_SECRET"))
         _CREDS_SOURCE = path
         return
 
@@ -87,10 +89,13 @@ def _iris_config_block(data: dict) -> dict:
 def _sync_token_from_iris_config() -> bool:
     """Re-read the IrisLabs CLI config and refresh IRIS_SDK_SECRET from it.
 
-    The token rotates on every `irislabs auth login`, so it always overwrites; URL and
-    app id only fill gaps. Returns True if a token was loaded. Safe to call
-    repeatedly — this is what makes a freshly-refreshed token visible without a
-    Claude Code restart. Handles both the v2 nested (Environments) and v1 flat layouts.
+    The CLI token rotates on every `irislabs auth login`. We only use it when no
+    explicit SDK secret was provided in the credentials file — the SDK secret is tied
+    to a specific app via IRISLABS_APP_ID, while the CLI JWT carries resource_id="1"
+    (tenant root) which would break Snowflake routing if used as the auth token.
+
+    Returns True if a CLI token was loaded. Safe to call repeatedly.
+    Handles both v2 nested (Environments) and v1 flat IrisLabs config layouts.
     """
     global _IRIS_CONFIG_SOURCE
     for path in _IRIS_CONFIG_PATHS:
@@ -106,6 +111,10 @@ def _sync_token_from_iris_config() -> bool:
             if not val:
                 continue
             if env_key == "IRIS_SDK_SECRET":
+                # Never overwrite an explicit SDK secret from the credentials file.
+                # The CLI JWT's resource_id="1" would shadow the configured app GUID.
+                if _CREDS_HAS_TOKEN:
+                    continue
                 os.environ[env_key] = str(val)
                 loaded = True
             elif not os.environ.get(env_key):
@@ -138,10 +147,12 @@ for _candidate in _sdk_candidates:
 
 _ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 print(f"[{_ts}] snowflake-dac MCP server starting", file=sys.stderr)
-if _IRIS_CONFIG_SOURCE:
-    print(f"[{_ts}] Token: live from IrisLabs CLI config {_IRIS_CONFIG_SOURCE}", file=sys.stderr)
+if _CREDS_SOURCE and _CREDS_HAS_TOKEN:
+    print(f"[{_ts}] Token: SDK secret from credentials file {_CREDS_SOURCE}", file=sys.stderr)
+elif _IRIS_CONFIG_SOURCE:
+    print(f"[{_ts}] Token: CLI JWT from {_IRIS_CONFIG_SOURCE} (fallback — set IRIS_SDK_SECRET for app-specific auth)", file=sys.stderr)
 elif _CREDS_SOURCE:
-    print(f"[{_ts}] Credentials: loaded from file {_CREDS_SOURCE}", file=sys.stderr)
+    print(f"[{_ts}] Credentials: loaded from file {_CREDS_SOURCE} (no token)", file=sys.stderr)
 else:
     print(f"[{_ts}] Credentials: from env vars (or not set)", file=sys.stderr)
 
@@ -237,18 +248,24 @@ def _guard(fn, **kwargs) -> str:
         return f"❌ Input invalide : {e}"
     except Exception as e:
         msg = str(e).lower()
+        # Sanitize SDK error messages that reference non-existent CLI commands.
+        raw = str(e).replace(
+            "irislabs snowflake external list",
+            "irislabs snowflake list-available",
+        )
         if "not found for app" in msg or "external snowflake database" in msg:
             return (
                 f"❌ App ID IrisLabs invalide ou sans accès Snowflake (IRISLABS_APP_ID='{app_id}').\n"
                 "→ Vérifie que l'app a les bindings Snowflake requis (ALLSTATE / MNP).\n"
-                "→ Pour lister les apps disponibles : `irislabs app list` dans le terminal.\n"
-                f"→ Erreur SDK : {e}"
+                "→ `irislabs snowflake list-available` — bases disponibles\n"
+                "→ `irislabs snowflake bindings` (depuis le répertoire de ton app) — bindings actifs\n"
+                f"→ Erreur SDK : {raw}"
             )
         if "auth" in msg or "login" in msg or "unauthorized" in msg:
             return "❌ Authentification IrisLabs échouée. Vérifie IRIS_SDK_SECRET (peut-être expiré)."
         if "timeout" in msg:
             return "❌ Snowflake timeout — essaye une plage de dates plus courte."
-        return f"❌ Erreur : {e}"
+        return f"❌ Erreur : {raw}"
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
@@ -345,10 +362,18 @@ def iris_ping() -> str:
     lines = ["## IRIS Health Check\n"]
 
     # Credentials source
-    if _IRIS_CONFIG_SOURCE:
-        lines.append(f"🔄 Token source : IrisLabs CLI (live) `{_IRIS_CONFIG_SOURCE}`")
+    if _CREDS_SOURCE and _CREDS_HAS_TOKEN:
+        lines.append(f"✅ Token source : SDK secret (fichier `{_CREDS_SOURCE}`) — auth app-specific")
+    elif _IRIS_CONFIG_SOURCE:
+        lines.append(
+            f"⚠️  Token source : CLI JWT (fallback) `{_IRIS_CONFIG_SOURCE}`\n"
+            "   → Le JWT CLI contient resource_id='1' (racine tenant) — IRISLABS_APP_ID\n"
+            "     du credentials file sera ignoré si le SDK l'override.\n"
+            "   → Recommandé : ajouter IRIS_SDK_SECRET (opaque SDK secret) dans\n"
+            "     `~/Documents/Claude/.snowflake-dac-credentials.json`"
+        )
     elif _CREDS_SOURCE:
-        lines.append(f"📁 Credentials source : fichier `{_CREDS_SOURCE}`")
+        lines.append(f"📁 Credentials source : fichier `{_CREDS_SOURCE}` (sans SDK secret)")
     else:
         lines.append("📁 Credentials source : variables d'environnement (userConfig ou .env)")
 
@@ -401,12 +426,13 @@ def iris_ping() -> str:
             "{\n"
             '  "IRIS_CONTROL_PLANE_URL": "https://irislabs.dacgroup.com",\n'
             '  "IRISLABS_APP_ID": "<GUID-de-ton-app-irislabs>",\n'
-            '  "IRIS_SDK_SECRET": "eyJ...",\n'
+            '  "IRIS_SDK_SECRET": "<opaque-sdk-secret>",\n'
             '  "IRISLABS_SDK_PATH": "/chemin/vers/.irislabs/sdk"\n'
             "}\n"
             "EOF\n"
             "chmod 600 ~/Documents/Claude/.snowflake-dac-credentials.json\n"
-            "```"
+            "```\n"
+            "→ SDK secret : `irislabs apps secret regenerate --env prod --app <GUID>`"
         )
     return "\n".join(lines)
 

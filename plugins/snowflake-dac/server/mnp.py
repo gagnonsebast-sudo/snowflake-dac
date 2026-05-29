@@ -13,6 +13,7 @@ from shared import (
 CLIENT = "MNP"
 DB = "PROD_DB.MNP_CONSUMPTION"
 MAIN_VIEW = f"{DB}.R_RPT_PAID_MEDIA"
+FALLBACK_VIEW = f"{DB}.R_RPT_PAIDMEDIA"  # same schema, no underscore between PAID and MEDIA
 WEB_VIEW = f"{DB}.R_RPT_WEB_SESSIONS"
 
 MNP_BLOCKER_MSG = (
@@ -30,6 +31,13 @@ def _mnp_run(sql: str) -> list[dict]:
         return run_query(sql, CLIENT)
     except Exception as e:
         if _is_channels_error(e):
+            # Primary view DDL is broken (C.CHANNELS typo) — retry with backup view.
+            fallback_sql = sql.replace(MAIN_VIEW, FALLBACK_VIEW)
+            if fallback_sql != sql:
+                try:
+                    return run_query(fallback_sql, CLIENT)
+                except Exception:
+                    pass
             raise RuntimeError(MNP_BLOCKER_MSG) from e
         raise
 
