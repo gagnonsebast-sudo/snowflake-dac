@@ -64,7 +64,7 @@ _DDL_PATTERN = re.compile(
 )
 
 ALLSTATE_WHITELIST = {"R_RPT_PAID_MEDIA", "R_FCT_PAID_MEDIA_CAMPAIGN"}
-MNP_WHITELIST = {"R_RPT_PAID_MEDIA", "R_RPT_WEB_SESSIONS"}
+MNP_WHITELIST = {"R_RPT_PAID_MEDIA", "R_RPT_PAIDMEDIA", "R_RPT_WEB_SESSIONS"}
 
 MAX_ROWS = 10_000
 
@@ -75,11 +75,10 @@ def guard_sql(sql: str, whitelist: set[str]) -> str:
         raise PermissionError("Read-only queries only — DDL/DML not permitted")
 
     upper = sql.upper()
-    for view in whitelist:
-        pass
-    mentioned = re.findall(r"\bFROM\s+(\w+)\b|\bJOIN\s+(\w+)\b", sql, re.IGNORECASE)
-    tables = {t for pair in mentioned for t in pair if t}
-    unauthorized = {t for t in tables if t.upper() not in {v.upper() for v in whitelist}}
+    # Accept both unqualified names and FQN (DB.SCHEMA.TABLE) — only the leaf name is checked.
+    mentioned = re.findall(r"\bFROM\s+([\w.]+)|\bJOIN\s+([\w.]+)", sql, re.IGNORECASE)
+    tables = {t.split(".")[-1].strip('"').upper() for pair in mentioned for t in pair if t}
+    unauthorized = {t for t in tables if t not in {v.upper() for v in whitelist}}
     if unauthorized:
         raise PermissionError("Query restricted to authorized views only")
 
