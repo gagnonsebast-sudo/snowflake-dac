@@ -256,9 +256,9 @@ def _guard(fn, **kwargs) -> str:
         if "not found for app" in msg or "external snowflake database" in msg:
             return (
                 f"❌ App ID IrisLabs invalide ou sans accès Snowflake (IRISLABS_APP_ID='{app_id}').\n"
-                "→ Vérifie que l'app a les bindings Snowflake requis (ALLSTATE / MNP).\n"
-                "→ `irislabs snowflake list-available` — bases disponibles\n"
-                "→ `irislabs snowflake bindings` (depuis le répertoire de ton app) — bindings actifs\n"
+                "→ Vérifie que l'app a les bindings Snowflake requis (ALLSTATE / MNP PROD — avec l'espace).\n"
+                "→ `irislabs snowflake bindings` (depuis le répertoire de ton app) — SEULE source fiable des accès accordés\n"
+                "→ `irislabs snowflake list-available` — liste les connexions demandables du tenant (pas les accès de l'app)\n"
                 f"→ Erreur SDK : {raw}"
             )
         if "auth" in msg or "login" in msg or "unauthorized" in msg:
@@ -356,7 +356,7 @@ def iris_refresh() -> str:
 
 @mcp.tool()
 def iris_ping() -> str:
-    """Check IrisLabs SDK and token validity without hitting Snowflake. Run this first if tools seem broken."""
+    """Full health check: SDK, token, config, and a SELECT 1 probe per Snowflake binding. Run this first if tools seem broken."""
     # Pick up any token refreshed since startup.
     _sync_token_from_iris_config()
     lines = ["## IRIS Health Check\n"]
@@ -415,8 +415,36 @@ def iris_ping() -> str:
         lines.append(f"✅ IRISLABS_APP_ID : {app_id}")
 
     app_id_ok = bool(app_id and app_id != "1")
-    all_ok = bool(SDK_FOUND and secret and (not secret or shared.check_token_expiry()[0]) and cp_url and app_id_ok)
-    lines.append(f"\n{'✅ Configuration OK — prêt pour les requêtes Snowflake' if all_ok else '❌ Configuration incomplète — voir les erreurs ci-dessus'}")
+    config_ok = bool(SDK_FOUND and secret and (not secret or shared.check_token_expiry()[0]) and cp_url and app_id_ok)
+
+    # Sondes bindings — SELECT 1 par client, coût warehouse nul. C'est la seule
+    # façon de tenir la promesse « run this first if tools seem broken » : la
+    # config peut être 100% valide alors qu'un binding est mal nommé ou non
+    # accordé (cause réelle de 2 mois de panne MNP). Non bloquant : un binding
+    # KO n'empêche pas le rapport sur l'autre.
+    bindings_ok = True
+    if config_ok:
+        lines.append("")
+        for label, binding in (("Allstate", shared.ALLSTATE_BINDING), ("MNP", shared.MNP_BINDING)):
+            try:
+                shared.run_query("SELECT 1 AS ok", binding)
+                lines.append(f"✅ Binding {label} (`{binding}`) : accessible")
+            except Exception as e:
+                bindings_ok = False
+                lines.append(
+                    f"❌ Binding {label} (`{binding}`) : {e}\n"
+                    "   → `irislabs snowflake bindings` depuis le répertoire de l'app (seule source fiable)"
+                )
+    else:
+        lines.append("\n⏭️  Sondes bindings sautées — corrige d'abord la configuration ci-dessus")
+
+    all_ok = config_ok and bindings_ok
+    if all_ok:
+        lines.append("\n✅ Configuration OK — bindings vérifiés, prêt pour les requêtes Snowflake")
+    elif config_ok:
+        lines.append("\n⚠️  Configuration OK mais au moins un binding est inaccessible — voir ci-dessus")
+    else:
+        lines.append("\n❌ Configuration incomplète — voir les erreurs ci-dessus")
 
     if not all_ok and not _CREDS_SOURCE:
         lines.append(

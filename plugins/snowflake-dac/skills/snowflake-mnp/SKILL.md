@@ -23,9 +23,27 @@ The user asks about **MNP** paid media performance:
 - This sum = Form + Calls (ads) + Calls (website)
 - `PLATFORM_LEAD_ON_FACEBOOK_LEADS` is reported SEPARATELY (social) — NOT included in Total
 
-## Known blocker
+## Failure modes — two distinct ones, do not confuse them
 
-`R_RPT_PAID_MEDIA` may return `invalid identifier 'C.CHANNELS'`. Every MNP tool wraps in try/except and returns this message when the error is detected:
+### 1. Binding error (fails BEFORE any SQL runs)
+
+> `External Snowflake database '<name>' not found for app <guid>`
+
+The Snowflake binding name is wrong or not granted to the app. The correct MNP
+binding is **`"MNP PROD"` — with the space** (granted 2026-05-13; a binding named
+plain `"MNP"` has never existed). Diagnosis: run `irislabs snowflake bindings`
+**from the app directory** — it is the ONLY reliable source of granted accesses.
+(`irislabs snowflake list-available` lists the tenant's requestable connections,
+NOT the app's grants — do not use it to diagnose this.)
+
+### 2. Broken canonical view (fails DURING SQL)
+
+> `invalid identifier 'C.CHANNELS'`
+
+The canonical view `R_RPT_PAID_MEDIA` has a DDL typo. Tools automatically fall
+back to the working sibling view `R_RPT_PAIDMEDIA` (no underscore between PAID
+and MEDIA — same columns, note `CHANNEL` singular). Only if the fallback ALSO
+fails do tools return:
 
 > "MNP data temporarily unavailable — view under maintenance (contact data engineering). Allstate is unaffected."
 

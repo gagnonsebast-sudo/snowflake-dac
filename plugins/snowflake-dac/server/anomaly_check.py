@@ -23,10 +23,15 @@ if not any("irislabs" in p for p in sys.path):
             sys.path.insert(0, os.path.abspath(_candidate))
             break
 
+# Binding names + MNP fallback runner centralized in shared.py (same directory,
+# resolvable both via the MCP server and standalone).
+from shared import (  # noqa: E402
+    ALLSTATE_BINDING, MNP_DB, MNP_BLOCKER_MSG, run_query, run_mnp_query,
+)
+
 THRESHOLD = 0.15  # 15%
 
 ALLSTATE_DB = "PROD_DB.ALLSTATE_CONSUMPTION"
-MNP_DB = "PROD_DB.MNP_CONSUMPTION"
 
 
 def last_monday() -> date:
@@ -36,11 +41,6 @@ def last_monday() -> date:
 
 def week_range(monday: date) -> tuple[date, date]:
     return monday, monday + timedelta(days=6)
-
-
-def run_query(sql: str, client: str):
-    from irislabs import data  # late import
-    return data.query(sql, snowflake=client)
 
 
 def _allstate_week_metrics(start: date, end: date) -> dict:
@@ -59,8 +59,8 @@ SELECT SUM(DTC_LEADS) AS dtc
 FROM {ALLSTATE_DB}.R_FCT_PAID_MEDIA_CAMPAIGN
 WHERE DATE BETWEEN '{start}' AND '{end}'
 """
-    rows = run_query(sql, "ALLSTATE")
-    dtc_rows = run_query(dtc_sql, "ALLSTATE")
+    rows = run_query(sql, ALLSTATE_BINDING)
+    dtc_rows = run_query(dtc_sql, ALLSTATE_BINDING)
     r = rows[0] if rows else {}
     spend = float(r.get("SPEND") or r.get("spend") or 0)
     qq = float(r.get("QQ") or r.get("qq") or 0)
@@ -81,7 +81,7 @@ WHERE DATE BETWEEN '{start}' AND '{end}'
   AND DB_PLATFORM != 'client_leads'
   AND REGION = 'QC'
 """
-    qc_rows = run_query(qc_sql, "ALLSTATE")
+    qc_rows = run_query(qc_sql, ALLSTATE_BINDING)
     qr = qc_rows[0] if qc_rows else {}
     qc_leads = (
         float(qr.get("QQ") or qr.get("qq") or 0)
@@ -92,6 +92,10 @@ WHERE DATE BETWEEN '{start}' AND '{end}'
 
 
 def _mnp_week_metrics(start: date, end: date) -> dict | None:
+    # run_mnp_query handles both the binding name ("MNP PROD") and the
+    # automatic fallback to R_RPT_PAIDMEDIA when the canonical view fails
+    # on the C.CHANNELS DDL error. This query only selects COST and
+    # PLATFORM_LEAD_TOTAL_CONVERSIONS, present in both views.
     sql = f"""
 SELECT
     SUM(COST) AS spend,
@@ -100,10 +104,10 @@ FROM {MNP_DB}.R_RPT_PAID_MEDIA
 WHERE DATE BETWEEN '{start}' AND '{end}'
 """
     try:
-        rows = run_query(sql, "MNP")
-    except Exception as e:
-        if "C.CHANNELS" in str(e).upper() or "CHANNELS" in str(e).upper():
-            return None  # blocker
+        rows = run_mnp_query(sql)
+    except RuntimeError as e:
+        if MNP_BLOCKER_MSG in str(e):
+            return None  # canonical view AND fallback both failed
         raise
     r = rows[0] if rows else {}
     spend = float(r.get("SPEND") or r.get("spend") or 0)
@@ -117,7 +121,7 @@ FROM {MNP_DB}.R_RPT_WEB_SESSIONS
 WHERE DATE BETWEEN '{start}' AND '{end}'
 """
     try:
-        sess_rows = run_query(sess_sql, "MNP")
+        sess_rows = run_mnp_query(sess_sql)
         sessions = float((sess_rows[0].get("SESSIONS") or sess_rows[0].get("sessions") or 0)) if sess_rows else 0
     except Exception:
         sessions = None
@@ -200,7 +204,7 @@ def run_anomaly_check() -> str:
         current_m = _mnp_week_metrics(target_start, target_end)
         if current_m is None:
             output_lines.append("⚠️  MNP — 1 anomalie")
-            output_lines.append("   [BLOQUÉ] Vue R_RPT_PAID_MEDIA cassée (C.CHANNELS) — données indisponibles")
+            output_lines.append("   [BLOQUÉ] Vue R_RPT_PAID_MEDIA cassée (C.CHANNELS) ET fallback R_RPT_PAIDMEDIA en échec — données indisponibles")
             output_lines.append("   → Contacter data engineering")
         else:
             baselines_m = [_mnp_week_metrics(s, e) for s, e in baseline_weeks]
