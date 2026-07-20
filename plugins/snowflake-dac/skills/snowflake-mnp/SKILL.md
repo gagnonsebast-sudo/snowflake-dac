@@ -40,9 +40,11 @@ NOT the app's grants — do not use it to diagnose this.)
 
 > `invalid identifier 'C.CHANNELS'`
 
-The canonical view `R_RPT_PAID_MEDIA` has a DDL typo. Tools automatically fall
-back to the working sibling view `R_RPT_PAIDMEDIA` (no underscore between PAID
-and MEDIA — same columns, note `CHANNEL` singular). Only if the fallback ALSO
+The canonical view `R_RPT_PAID_MEDIA` had a DDL typo — **repaired upstream on
+2026-07-20** (both views now return identical counts). The automatic fallback
+to the sibling view `R_RPT_PAIDMEDIA` (no underscore between PAID and MEDIA —
+same columns, note `CHANNEL` singular) is kept as a safety net and only
+triggers on the exact `C.CHANNELS` signature. Only if the fallback ALSO
 fails do tools return:
 
 > "MNP data temporarily unavailable — view under maintenance (contact data engineering). Allstate is unaffected."

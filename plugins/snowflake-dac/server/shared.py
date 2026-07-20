@@ -88,6 +88,26 @@ def guard_sql(sql: str, whitelist: set[str]) -> str:
     return sql
 
 
+def qualify_views(sql: str, whitelist: set[str], prefix: str) -> str:
+    """Prefix bare authorized view names in FROM/JOIN with DB.SCHEMA.
+
+    The MNP Snowflake session has no default schema, so an unqualified name
+    that guard_sql accepts still fails at execution with an obscure
+    "does not exist or not authorized" (QA 2026-07-20, B8). Qualifying it
+    here lets users write the short form safely. Already-qualified names and
+    non-whitelisted names are left untouched.
+    """
+    allowed = {v.upper() for v in whitelist}
+
+    def repl(m: re.Match) -> str:
+        kw, name = m.group(1), m.group(2)
+        if "." not in name and name.strip('"').upper() in allowed:
+            return f"{kw} {prefix}.{name}"
+        return m.group(0)
+
+    return re.sub(r"\b(FROM|JOIN)\s+([\w.\"]+)", repl, sql, flags=re.IGNORECASE)
+
+
 # ── Token validation ─────────────────────────────────────────────────────────
 
 def check_token_expiry() -> tuple[bool, str]:
@@ -138,14 +158,16 @@ MNP_BLOCKER_MSG = (
 
 
 def is_channels_error(e: Exception) -> bool:
-    """True only for the known broken-DDL error of R_RPT_PAID_MEDIA.
+    """True ONLY for the exact broken-DDL signature of R_RPT_PAID_MEDIA.
 
-    Deliberately narrow: matching any error containing "CHANNELS" would trigger
-    the fallback on unrelated errors (e.g. a user query with a channel filter)
-    and mask the real cause.
+    Strictly "C.CHANNELS": the broader match (invalid identifier + CHANNELS)
+    also caught plugin/user SQL errors like `invalid identifier 'CHANNELS'`
+    and converted them into the "view under maintenance" message — blaming
+    data engineering for bugs that were 100% internal (QA 2026-07-20, B4).
+    The canonical view was repaired upstream on 2026-07-20; the fallback is
+    kept only as a safety net should the exact same typo ever reappear.
     """
-    up = str(e).upper()
-    return "C.CHANNELS" in up or ("INVALID IDENTIFIER" in up and "CHANNELS" in up)
+    return "C.CHANNELS" in str(e).upper()
 
 
 def run_query(sql: str, client: str) -> list[dict[str, Any]]:
@@ -187,6 +209,14 @@ def fmt_pct(v: float | None) -> str:
         return "N/A"
     sign = "+" if v and v >= 0 else ""
     return f"{sign}{v:.1f}%"
+
+
+def fmt_pct_wow(v: float | None) -> str:
+    """fmt_pct with a ⚠️ marker beyond ±10% — WoW deltas worth investigating."""
+    s = fmt_pct(v)
+    if v is not None and abs(v) > 10:
+        s += " ⚠️"
+    return s
 
 
 def delta_pct(current: float, previous: float) -> float | None:

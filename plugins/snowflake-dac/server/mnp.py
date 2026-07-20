@@ -6,9 +6,9 @@ from typing import Any
 
 from shared import (
     parse_date, default_date_range, current_week_start, prev_week_start,
-    week_end, run_mnp_query, guard_sql, MNP_WHITELIST,
+    week_end, run_mnp_query, guard_sql, qualify_views, MNP_WHITELIST,
     MNP_BINDING, MNP_DB, MNP_MAIN_VIEW, MNP_BLOCKER_MSG,
-    fmt_cad, fmt_pct, delta_pct, safe_cpl, yesterday,
+    fmt_cad, fmt_pct, fmt_pct_wow, delta_pct, safe_cpl, yesterday,
 )
 
 # Binding name centralized in shared.py — NEVER hardcode "MNP" here, that
@@ -115,9 +115,9 @@ WHERE DATE BETWEEN '{s}' AND '{e}'
             out += f"Impressions:  {int(imp):,}\n"
             out += f"CTR:          {ctr:.2f}%\n\n"
             out += f"WoW vs {prev_start} → {prev_end}:\n"
-            out += f"  Spend:  {fmt_pct(delta_pct(spend, prev_spend))}\n"
-            out += f"  Leads:  {fmt_pct(delta_pct(total_leads, prev_leads))}\n"
-            out += f"  CPL:    {fmt_pct(delta_pct(cpl or 0, prev_cpl or 0))}\n\n"
+            out += f"  Spend:  {fmt_pct_wow(delta_pct(spend, prev_spend))}\n"
+            out += f"  Leads:  {fmt_pct_wow(delta_pct(total_leads, prev_leads))}\n"
+            out += f"  CPL:    {fmt_pct_wow(delta_pct(cpl or 0, prev_cpl or 0))}\n\n"
             out += f"Social (exclu du total):\n  Facebook Leads: {int(fb):,}\n"
             return out
         except RuntimeError as e:
@@ -126,7 +126,9 @@ WHERE DATE BETWEEN '{s}' AND '{e}'
     # group_by variants
     group_map = {
         "platform": "PLATFORM",
-        "channels": "CHANNELS",
+        # Column is CHANNEL, singular, in both views — CHANNELS was a plugin
+        # typo that killed this group_by (QA B2). API key stays "channels".
+        "channels": "CHANNEL",
         "region": "REGION",
         "campaign_type": "CAMPAIGN_TYPE",
     }
@@ -224,14 +226,14 @@ def mnp_by_channel(
 
     sql = f"""
 SELECT
-    CHANNELS,
+    CHANNEL,
     SUM(COST) AS spend,
     SUM(PLATFORM_LEAD_TOTAL_CONVERSIONS) AS total_leads,
     SUM(PLATFORM_LEAD_ON_FACEBOOK_LEADS) AS fb_leads,
     SUM(CLICKS) AS clicks
 FROM {MAIN_VIEW}
 WHERE DATE BETWEEN '{start}' AND '{end}'
-GROUP BY CHANNELS
+GROUP BY CHANNEL
 ORDER BY spend DESC
 """
     try:
@@ -244,7 +246,7 @@ ORDER BY spend DESC
     out += f"{'Canal':<25} {'Spend':>12} {'% total':>8} {'Leads':>8} {'CPL':>10}\n"
     out += "─" * 66 + "\n"
     for r in rows:
-        channel = str(r.get("CHANNELS") or r.get("channels") or "—")[:24]
+        channel = str(r.get("CHANNEL") or r.get("channel") or "—")[:24]
         spend = float(r.get("SPEND") or r.get("spend") or 0)
         leads = float(r.get("TOTAL_LEADS") or r.get("total_leads") or 0)
         cpl = safe_cpl(spend, leads)
@@ -314,11 +316,20 @@ ORDER BY sessions DESC
 
 def mnp_wow(week_start: str | None = None) -> str:
     """Comparaison semaine vs semaine précédente MNP."""
+    # No local imports here: a `from shared import ... current_week_start`
+    # inside the if-branch made the name function-local and crashed the else
+    # branch with UnboundLocalError (QA B3). Module-level imports suffice.
+    note = ""
     if week_start:
-        from shared import parse_date, current_week_start
         ws = parse_date(week_start, current_week_start())
     else:
         ws = current_week_start()
+        elapsed = (min(yesterday(), week_end(ws)) - ws).days + 1
+        if elapsed <= 0:
+            ws = prev_week_start(ws)
+            note = "ℹ️  Semaine en cours sans journée complète de données — comparaison sur la dernière semaine complète.\n\n"
+        elif elapsed < 7:
+            note = f"⚠️  Semaine en cours incomplète ({elapsed}/7 jours de données) — deltas non comparables à une semaine pleine.\n\n"
     we = week_end(ws)
     pws = prev_week_start(ws)
     pwe = week_end(pws)
@@ -363,6 +374,7 @@ WHERE DATE BETWEEN '{s}' AND '{e}'
     out = f"📊 MNP — WoW\n\n"
     out += f"Semaine courante:   {ws} → {we}\n"
     out += f"Semaine précédente: {pws} → {pwe}\n\n"
+    out += note
     out += f"{'Métrique':<22} {'Courante':>12}   {'Précédente':>12}   {'Delta':>8}\n"
     out += "─" * 60 + "\n"
     for label, ck, pk, money in [
@@ -561,6 +573,9 @@ def mnp_query(question: str) -> str:
             safe_sql = guard_sql(question, MNP_WHITELIST)
         except PermissionError as e:
             return str(e)
+        # The MNP session has no default schema — qualify bare view names so
+        # accepted queries don't die in Snowflake with an obscure error (B8).
+        safe_sql = qualify_views(safe_sql, MNP_WHITELIST, DB)
         try:
             rows = _mnp_run(safe_sql)
         except RuntimeError as e:
