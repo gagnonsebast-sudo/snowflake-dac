@@ -8,10 +8,11 @@ from typing import Any
 from shared import (
     parse_date, default_date_range, current_week_start, prev_week_start,
     week_end, current_month_range, run_query, guard_sql, ALLSTATE_WHITELIST,
-    fmt_cad, fmt_pct, delta_pct, safe_cpl, today, yesterday,
+    ALLSTATE_BINDING,
+    fmt_cad, fmt_pct, fmt_pct_wow, delta_pct, safe_cpl, today, yesterday,
 )
 
-CLIENT = "ALLSTATE"
+CLIENT = ALLSTATE_BINDING
 DB = "PROD_DB.ALLSTATE_CONSUMPTION"
 MAIN_VIEW = f"{DB}.R_RPT_PAID_MEDIA"
 CAMPAIGN_VIEW = f"{DB}.R_FCT_PAID_MEDIA_CAMPAIGN"
@@ -105,8 +106,11 @@ def allstate_performance(
 
     if group_by == "total":
         cur = _fetch_period(start, end)
+        # Previous window matches the requested period length — a hardcoded
+        # 7 days compared a 1-day period against a full week (QA B5).
+        days = (end - start).days
         prev_end = start - timedelta(days=1)
-        prev_start = prev_end - timedelta(days=6)
+        prev_start = prev_end - timedelta(days=days)
         prev = _fetch_period(prev_start, prev_end)
 
         ctr = (cur["clicks"] / cur["impressions"] * 100) if cur["impressions"] else 0
@@ -120,9 +124,9 @@ def allstate_performance(
         out += f"CTR:          {ctr:.2f}%\n\n"
 
         out += f"WoW vs {prev_start} → {prev_end}:\n"
-        out += f"  Spend:  {fmt_pct(delta_pct(cur['spend'], prev['spend']))}\n"
-        out += f"  Leads:  {fmt_pct(delta_pct(cur['total_leads'], prev['total_leads']))}\n"
-        out += f"  CPL:    {fmt_pct(delta_pct(cur['cpl'] or 0, prev['cpl'] or 0))}\n\n"
+        out += f"  Spend:  {fmt_pct_wow(delta_pct(cur['spend'], prev['spend']))}\n"
+        out += f"  Leads:  {fmt_pct_wow(delta_pct(cur['total_leads'], prev['total_leads']))}\n"
+        out += f"  CPL:    {fmt_pct_wow(delta_pct(cur['cpl'] or 0, prev['cpl'] or 0))}\n\n"
 
         out += _conversion_block(cur)
         return out
@@ -293,36 +297,49 @@ LIMIT {min(limit, 50)}
     rows = run_query(sql, CLIENT)
 
     out = _header(start, end, "Allstate — Campagnes")
+    filters = []
     if region:
-        out += f"Région: {region}   "
+        filters.append(f"Région: {region}")
     if platform:
-        out += f"Plateforme: {platform}   "
+        filters.append(f"Plateforme: {platform}")
     if campaign_type:
-        out += f"Type: {campaign_type}"
-    out += "\n\n"
-    out += f"{'Campagne':<50} {'Plateforme':<15} {'Région':<10} {'Spend':>12} {'Leads*':>8} {'CPL':>10}\n"
-    out += "─" * 108 + "\n"
+        filters.append(f"Type: {campaign_type}")
+    if filters:
+        out += "   ".join(filters) + "\n\n"
+    out += f"{'Campagne':<50} {'Plateforme':<15} {'Région':<25} {'Spend':>12} {'Leads*':>8} {'CPL':>10}\n"
+    out += "─" * 123 + "\n"
     for r in rows:
         camp = str(r.get("CAMPAIGN") or r.get("campaign") or "—")[:49]
         plat = str(r.get("PLATFORM") or r.get("platform") or "—")[:14]
-        reg = str(r.get("REGION") or r.get("region") or "—")[:9]
+        reg = str(r.get("REGION") or r.get("region") or "—")[:24]
         spend = float(r.get("SPEND") or r.get("spend") or 0)
         qq = float(r.get("QUICK_QUOTE") or r.get("quick_quote") or 0)
         ca = float(r.get("CALLS_ADS") or r.get("calls_ads") or 0)
         ci = float(r.get("CALLS_INVOCA") or r.get("calls_invoca") or 0)
         leads = qq + ca + ci
         cpl = safe_cpl(spend, leads)
-        out += f"{camp:<50} {plat:<15} {reg:<10} {fmt_cad(spend):>12} {int(leads):>8,} {fmt_cad(cpl):>10}\n"
+        out += f"{camp:<50} {plat:<15} {reg:<25} {fmt_cad(spend):>12} {int(leads):>8,} {fmt_cad(cpl):>10}\n"
     out += "\n* Leads = QQ+Calls (DTC non ventilable par campagne)\n"
     return out
 
 
 def allstate_wow(week_start: str | None = None) -> str:
     """Comparaison semaine vs semaine précédente Allstate."""
+    note = ""
     if week_start:
         ws = parse_date(week_start, current_week_start())
     else:
+        # Monday-morning report (the main use case): the current week has zero
+        # complete data days, which produced −99% deltas across the board
+        # (QA B6). Default to the last complete week; mid-week, warn that the
+        # current week is partial.
         ws = current_week_start()
+        elapsed = (min(yesterday(), week_end(ws)) - ws).days + 1
+        if elapsed <= 0:
+            ws = prev_week_start(ws)
+            note = "ℹ️  Semaine en cours sans journée complète de données — comparaison sur la dernière semaine complète.\n\n"
+        elif elapsed < 7:
+            note = f"⚠️  Semaine en cours incomplète ({elapsed}/7 jours de données) — deltas non comparables à une semaine pleine.\n\n"
     we = week_end(ws)
     pws = prev_week_start(ws)
     pwe = week_end(pws)
@@ -333,6 +350,7 @@ def allstate_wow(week_start: str | None = None) -> str:
     out = f"📊 Allstate — WoW\n\n"
     out += f"Semaine courante:  {ws} → {we}\n"
     out += f"Semaine précédente: {pws} → {pwe}\n\n"
+    out += note
 
     def row(label, cur_v, prev_v, is_money=False, is_leads=False):
         fmt = fmt_cad if is_money else (lambda x: f"{int(x):,}" if x is not None else "N/A")
@@ -403,16 +421,22 @@ WHERE DATE BETWEEN '{start}' AND '{period_end}'
         projected = actual_spend / days_elapsed * days_in_month if days_elapsed else 0
         gap = actual_spend - expected_to_date
 
-        if delivery_pct < 90:
+        # Status MUST be time-aware: comparing raw budget consumption to fixed
+        # 90/110 thresholds mid-month labeled an over-spending account "UNDER"
+        # (80.6% of budget consumed at 61.3% of the month → shown as UNDER while
+        # projected +31.5% over — QA 2026-07-20, B1, financial risk).
+        pace_pct = (actual_spend / expected_to_date * 100) if expected_to_date else 0
+        if pace_pct < 90:
             status = "🔴 UNDER"
-        elif delivery_pct > 110:
+        elif pace_pct > 110:
             status = "🔴 OVER"
         else:
             status = "✅ ON TRACK"
 
         out += f"Budget total:                         {fmt_cad(budget_total)}\n"
         out += f"Spend attendu pro-raté:               {fmt_cad(expected_to_date)}\n"
-        out += f"% delivery:                           {delivery_pct:.1f}%\n"
+        out += f"% du budget consommé:                 {delivery_pct:.1f}%\n"
+        out += f"% du rythme attendu:                  {pace_pct:.1f}%\n"
         out += f"Gap vs attendu:                       {fmt_cad(gap)}\n"
         out += f"Projection fin de mois:               {fmt_cad(projected)}\n"
         out += f"Jours restants:                       {days_remaining}\n"
