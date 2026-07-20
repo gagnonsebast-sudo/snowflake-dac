@@ -33,7 +33,8 @@ Before fetching any data, identify which client the user is asking about.
 
 | Issue | Behavior |
 |-------|----------|
-| MNP view `R_RPT_PAID_MEDIA` returns `invalid identifier 'C.CHANNELS'` | Every MNP tool catches it and returns: *"MNP data temporarily unavailable — view under maintenance (contact data engineering). Allstate is unaffected."* — surface verbatim, do not retry. |
+| `External Snowflake database '<name>' not found for app <guid>` | Binding name wrong or not granted — fails BEFORE any SQL. MNP binding is **`"MNP PROD"` with the space** (never plain `"MNP"`). Diagnose with `irislabs snowflake bindings` from the app directory (only reliable source; `list-available` shows requestable, not granted). |
+| MNP view `R_RPT_PAID_MEDIA` returns `invalid identifier 'C.CHANNELS'` | Tools auto-fallback to sibling view `R_RPT_PAIDMEDIA` (works, same columns). Only if the fallback ALSO fails: *"MNP data temporarily unavailable — view under maintenance (contact data engineering). Allstate is unaffected."* — surface verbatim, do not retry. |
 | IrisLabs SDK not found | Tools return: *"❌ SDK IrisLabs introuvable. Vérifie qu'il est présent à un emplacement standard..."* |
 | `IRIS_SDK_SECRET` missing | Tools return: *"❌ IRIS_SDK_SECRET non configuré..."* → call `iris_refresh`. |
 | **Token expired / "auth échouée" / tools return nothing** | **Call `iris_refresh` first.** It opens the IrisLabs login in the browser, then the fresh token is read automatically (no restart, no copy/paste). Retry the original request after login. |

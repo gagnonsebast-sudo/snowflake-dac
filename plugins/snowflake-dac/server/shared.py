@@ -116,11 +116,64 @@ def check_token_expiry() -> tuple[bool, str]:
 
 # ── IrisLabs query wrapper ────────────────────────────────────────────────────
 
+# Snowflake binding names — the EXACT strings granted to the app (see
+# `irislabs snowflake bindings` from the app directory). Single source of truth:
+# 3 scattered copies of a wrong literal ("MNP" — a binding that never existed;
+# the real grant of 2026-05-13 is "MNP PROD", with the space) kept every mnp_*
+# tool dead for two months. Do not inline these strings anywhere else.
+ALLSTATE_BINDING = "ALLSTATE"
+MNP_BINDING = "MNP PROD"
+
+# MNP views — the canonical view has a broken DDL (typo `C.CHANNELS`; the source
+# column is `CHANNEL`, singular). The sibling view R_RPT_PAIDMEDIA (no underscore
+# between PAID and MEDIA) works and carries the same columns.
+MNP_DB = "PROD_DB.MNP_CONSUMPTION"
+MNP_MAIN_VIEW = f"{MNP_DB}.R_RPT_PAID_MEDIA"
+MNP_FALLBACK_VIEW = f"{MNP_DB}.R_RPT_PAIDMEDIA"
+
+MNP_BLOCKER_MSG = (
+    "MNP data temporarily unavailable — view under maintenance (contact data engineering). "
+    "Allstate is unaffected."
+)
+
+
+def is_channels_error(e: Exception) -> bool:
+    """True only for the known broken-DDL error of R_RPT_PAID_MEDIA.
+
+    Deliberately narrow: matching any error containing "CHANNELS" would trigger
+    the fallback on unrelated errors (e.g. a user query with a channel filter)
+    and mask the real cause.
+    """
+    up = str(e).upper()
+    return "C.CHANNELS" in up or ("INVALID IDENTIFIER" in up and "CHANNELS" in up)
+
+
 def run_query(sql: str, client: str) -> list[dict[str, Any]]:
-    """Execute SQL via IrisLabs SDK. client = 'ALLSTATE' | 'MNP'."""
+    """Execute SQL via IrisLabs SDK. client = ALLSTATE_BINDING | MNP_BINDING."""
     from irislabs import data  # late import per pattern
     rows = data.query(sql, snowflake=client)
     return rows
+
+
+def run_mnp_query(sql: str) -> list[dict[str, Any]]:
+    """Run MNP SQL with automatic fallback to the working sibling view.
+
+    If the canonical view fails with the C.CHANNELS DDL error, the query is
+    retried on R_RPT_PAIDMEDIA. The blocker RuntimeError is raised only when
+    the fallback also fails.
+    """
+    try:
+        return run_query(sql, MNP_BINDING)
+    except Exception as e:
+        if is_channels_error(e):
+            fallback_sql = sql.replace(MNP_MAIN_VIEW, MNP_FALLBACK_VIEW)
+            if fallback_sql != sql:
+                try:
+                    return run_query(fallback_sql, MNP_BINDING)
+                except Exception:
+                    pass
+            raise RuntimeError(MNP_BLOCKER_MSG) from e
+        raise
 
 
 def fmt_cad(v: float | None) -> str:

@@ -1,5 +1,6 @@
 {
   "name": "snowflake-dac",
+  "version": "1.1.0",
   "description": "Plugin Claude pour DAC Group — accès aux performances paid media Allstate & MNP via Snowflake (spend, leads, CPL, WoW, pacing, anomalies).",
   "repository": "https://github.com/gagnonsebast-sudo/snowflake-dac",
   "userConfig": {

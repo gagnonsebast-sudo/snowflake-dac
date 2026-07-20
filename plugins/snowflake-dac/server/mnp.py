@@ -6,40 +6,22 @@ from typing import Any
 
 from shared import (
     parse_date, default_date_range, current_week_start, prev_week_start,
-    week_end, run_query, guard_sql, MNP_WHITELIST,
+    week_end, run_mnp_query, guard_sql, MNP_WHITELIST,
+    MNP_BINDING, MNP_DB, MNP_MAIN_VIEW, MNP_BLOCKER_MSG,
     fmt_cad, fmt_pct, delta_pct, safe_cpl, yesterday,
 )
 
-CLIENT = "MNP"
-DB = "PROD_DB.MNP_CONSUMPTION"
-MAIN_VIEW = f"{DB}.R_RPT_PAID_MEDIA"
-FALLBACK_VIEW = f"{DB}.R_RPT_PAIDMEDIA"  # same schema, no underscore between PAID and MEDIA
+# Binding name centralized in shared.py — NEVER hardcode "MNP" here, that
+# binding does not exist (the real grant is "MNP PROD", with the space).
+CLIENT = MNP_BINDING
+DB = MNP_DB
+MAIN_VIEW = MNP_MAIN_VIEW
 WEB_VIEW = f"{DB}.R_RPT_WEB_SESSIONS"
-
-MNP_BLOCKER_MSG = (
-    "MNP data temporarily unavailable — view under maintenance (contact data engineering). "
-    "Allstate is unaffected."
-)
-
-
-def _is_channels_error(e: Exception) -> bool:
-    return "C.CHANNELS" in str(e).upper() or "CHANNELS" in str(e).upper()
 
 
 def _mnp_run(sql: str) -> list[dict]:
-    try:
-        return run_query(sql, CLIENT)
-    except Exception as e:
-        if _is_channels_error(e):
-            # Primary view DDL is broken (C.CHANNELS typo) — retry with backup view.
-            fallback_sql = sql.replace(MAIN_VIEW, FALLBACK_VIEW)
-            if fallback_sql != sql:
-                try:
-                    return run_query(fallback_sql, CLIENT)
-                except Exception:
-                    pass
-            raise RuntimeError(MNP_BLOCKER_MSG) from e
-        raise
+    """MNP query with automatic fallback view — see shared.run_mnp_query."""
+    return run_mnp_query(sql)
 
 
 def _header(date_from, date_to, title: str) -> str:
@@ -302,11 +284,9 @@ WHERE DATE BETWEEN '{start}' AND '{end}'
 ORDER BY sessions DESC
 """
     try:
-        rows = run_query(sql_total, CLIENT)
-    except Exception as e:
-        if _is_channels_error(e):
-            return MNP_BLOCKER_MSG
-        raise
+        rows = _mnp_run(sql_total)
+    except RuntimeError as e:
+        return str(e)
 
     out = _header(start, end, f"MNP — Web Sessions (GA4)")
     if group_by == "total":
@@ -495,7 +475,7 @@ WHERE DATE BETWEEN '{start}' AND '{end}'
 GROUP BY DATE
 ORDER BY DATE
 """
-            sess_rows = run_query(sess_sql, CLIENT)
+            sess_rows = _mnp_run(sess_sql)
             for r in sess_rows:
                 d = str(r.get("DATE") or r.get("date") or "")[:10]
                 session_data[d] = int(r.get("SESSIONS") or r.get("sessions") or 0)
