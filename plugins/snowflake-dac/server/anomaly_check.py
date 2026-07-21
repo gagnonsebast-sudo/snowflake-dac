@@ -147,9 +147,10 @@ def _check(label: str, current: float | None, baseline: float | None) -> tuple[b
 def _fmt(label: str, v: float) -> str:
     if "spend" in label.lower() or "cpl" in label.lower():
         return f"${v:,.2f}"
-    if "sessions" in label.lower():
-        return f"{int(v):,}"
-    return f"{int(v):,}"
+    # round(), not int(): leads are fractional (Invoca weighted attribution) and
+    # every other tool rounds — int() here showed 621 where the rest said 622
+    # (QA v1.2.1, R1). Sessions are integers, round() is a no-op for them.
+    return f"{round(v):,}"
 
 
 def run_anomaly_check() -> str:
