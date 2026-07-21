@@ -109,7 +109,7 @@ WHERE DATE BETWEEN '{s}' AND '{e}'
 
             out = _header(start, end, "MNP")
             out += f"Spend:        {fmt_cad(spend)}\n"
-            out += f"Total leads:  {int(total_leads):,}\n"
+            out += f"Total leads:  {round(total_leads):,}\n"
             out += f"CPL:          {fmt_cad(cpl)}\n"
             out += f"Clicks:       {clicks:,}\n"
             out += f"Impressions:  {int(imp):,}\n"
@@ -118,7 +118,7 @@ WHERE DATE BETWEEN '{s}' AND '{e}'
             out += f"  Spend:  {fmt_pct_wow(delta_pct(spend, prev_spend))}\n"
             out += f"  Leads:  {fmt_pct_wow(delta_pct(total_leads, prev_leads))}\n"
             out += f"  CPL:    {fmt_pct_wow(delta_pct(cpl or 0, prev_cpl or 0))}\n\n"
-            out += f"Social (exclu du total):\n  Facebook Leads: {int(fb):,}\n"
+            out += f"Social (exclu du total):\n  Facebook Leads: {round(fb):,}\n"
             return out
         except RuntimeError as e:
             return str(e)
@@ -164,7 +164,7 @@ ORDER BY spend DESC
         fb = float(r.get("FB_LEADS") or r.get("fb_leads") or 0)
         cpl = safe_cpl(spend, leads)
         pct = spend / total_spend * 100 if total_spend else 0
-        out += f"{grp:<30} {fmt_cad(spend):>12} {pct:>7.1f}% {int(leads):>8,} {fmt_cad(cpl):>10} {int(fb):>10,}\n"
+        out += f"{grp:<30} {fmt_cad(spend):>12} {pct:>7.1f}% {round(leads):>8,} {fmt_cad(cpl):>10} {round(fb):>10,}\n"
     return out
 
 
@@ -205,13 +205,13 @@ WHERE DATE BETWEEN '{start}' AND '{end}'
         return f"{v/total*100:.1f}%" if total else "—"
 
     out = _header(start, end, "MNP — Conversion Breakdown")
-    out += f"Formulaire:              {int(form):>8,}   ({pct(form)})\n"
-    out += f"Calls (ads - Invoca):    {int(calls_ads):>8,}   ({pct(calls_ads)})\n"
-    out += f"Calls (web - Invoca):    {int(calls_web):>8,}   ({pct(calls_web)})\n"
+    out += f"Formulaire:              {round(form):>8,}   ({pct(form)})\n"
+    out += f"Calls (ads - Invoca):    {round(calls_ads):>8,}   ({pct(calls_ads)})\n"
+    out += f"Calls (web - Invoca):    {round(calls_web):>8,}   ({pct(calls_web)})\n"
     out += "─" * 42 + "\n"
-    out += f"Total leads:             {int(total):>8,}\n\n"
+    out += f"Total leads:             {round(total):>8,}\n\n"
     out += f"Social (exclu du total):\n"
-    out += f"  Facebook Leads:        {int(fb):>8,}\n\n"
+    out += f"  Facebook Leads:        {round(fb):>8,}\n\n"
     out += f"Spend: {fmt_cad(spend)}   CPL: {fmt_cad(cpl)}\n"
     return out
 
@@ -245,13 +245,21 @@ ORDER BY spend DESC
     out = _header(start, end, "MNP — par Canal")
     out += f"{'Canal':<25} {'Spend':>12} {'% total':>8} {'Leads':>8} {'CPL':>10}\n"
     out += "─" * 66 + "\n"
+    inactive = []
     for r in rows:
         channel = str(r.get("CHANNEL") or r.get("channel") or "—")[:24]
         spend = float(r.get("SPEND") or r.get("spend") or 0)
         leads = float(r.get("TOTAL_LEADS") or r.get("total_leads") or 0)
+        # Channels with zero spend AND zero leads clutter the table without
+        # informing anyone (QA v1.2.0, N3) — list them in a footnote instead.
+        if not spend and not leads:
+            inactive.append(channel)
+            continue
         cpl = safe_cpl(spend, leads)
         pct = spend / total_spend * 100 if total_spend else 0
-        out += f"{channel:<25} {fmt_cad(spend):>12} {pct:>7.1f}% {int(leads):>8,} {fmt_cad(cpl):>10}\n"
+        out += f"{channel:<25} {fmt_cad(spend):>12} {pct:>7.1f}% {round(leads):>8,} {fmt_cad(cpl):>10}\n"
+    if inactive:
+        out += f"\nCanaux inactifs sur la période (spend $0, 0 lead) : {', '.join(inactive)}\n"
     return out
 
 
@@ -383,7 +391,7 @@ WHERE DATE BETWEEN '{s}' AND '{e}'
         ("CPL", "cpl", "cpl", True),
     ]:
         cv, pv = cur[ck], prev[pk]
-        fmt = fmt_cad if money else (lambda x: f"{int(x):,}" if x is not None else "N/A")
+        fmt = fmt_cad if money else (lambda x: f"{round(x):,}" if x is not None else "N/A")
         d = delta_pct(cv or 0, pv or 0)
         out += f"  {label:<20} {fmt(cv):>12}   {fmt(pv):>12}   {fmt_pct(d):>8}\n"
 
@@ -393,8 +401,8 @@ WHERE DATE BETWEEN '{s}' AND '{e}'
     for label, ck in [("Formulaire", "form"), ("Calls (ads)", "calls_ads"), ("Calls (web)", "calls_web")]:
         cv, pv = cur[ck], prev[ck]
         d = delta_pct(cv, pv)
-        out += f"  {label:<22} {int(cv):>10,}   {int(pv):>10,}   {fmt_pct(d):>8}\n"
-    out += f"\nSocial (exclu): Facebook Leads: {int(cur['fb']):,} vs {int(prev['fb']):,}\n"
+        out += f"  {label:<22} {round(cv):>10,}   {round(pv):>10,}   {fmt_pct(d):>8}\n"
+    out += f"\nSocial (exclu): Facebook Leads: {round(cur['fb']):,} vs {round(prev['fb']):,}\n"
     return out
 
 
@@ -435,10 +443,10 @@ ORDER BY calls_ads DESC
         ads = float(r.get("CALLS_ADS") or r.get("calls_ads") or 0)
         web = float(r.get("CALLS_WEB") or r.get("calls_web") or 0)
         ratio = ads / web if web else None
-        out += f"Calls from ads (Invoca):    {int(ads):,}\n"
-        out += f"Calls website (Invoca):     {int(web):,}\n"
+        out += f"Calls from ads (Invoca):    {round(ads):,}\n"
+        out += f"Calls website (Invoca):     {round(web):,}\n"
         out += f"Ratio ads/web:              {f'{ratio:.2f}' if ratio else 'N/A'}\n"
-        out += f"Delta:                      {int(ads - web):+,}\n"
+        out += f"Delta:                      {round(ads - web):+,}\n"
     else:
         out += f"{'Groupe':<25} {'Calls ads':>12} {'Calls web':>12} {'Ratio':>8}\n"
         out += "─" * 60 + "\n"
@@ -447,7 +455,7 @@ ORDER BY calls_ads DESC
             ads = float(r.get("CALLS_ADS") or r.get("calls_ads") or 0)
             web = float(r.get("CALLS_WEB") or r.get("calls_web") or 0)
             ratio = ads / web if web else None
-            out += f"{grp:<25} {int(ads):>12,} {int(web):>12,} {f'{ratio:.2f}' if ratio else 'N/A':>8}\n"
+            out += f"{grp:<25} {round(ads):>12,} {round(web):>12,} {f'{ratio:.2f}' if ratio else 'N/A':>8}\n"
     return out
 
 
@@ -506,7 +514,7 @@ ORDER BY DATE
         leads = float(r.get("TOTAL_LEADS") or r.get("total_leads") or 0)
         cpl = safe_cpl(spend, leads)
         clicks = int(r.get("CLICKS") or r.get("clicks") or 0)
-        line = f"{d:<12} {fmt_cad(spend):>12} {int(leads):>8,} {fmt_cad(cpl):>10} {clicks:>8,}"
+        line = f"{d:<12} {fmt_cad(spend):>12} {round(leads):>8,} {fmt_cad(cpl):>10} {clicks:>8,}"
         if include_sessions:
             sess = session_data.get(d, 0)
             line += f" {sess:>10,}"
@@ -560,7 +568,7 @@ LIMIT {min(limit, 50)}
         spend = float(r.get("SPEND") or r.get("spend") or 0)
         leads = float(r.get("TOTAL_LEADS") or r.get("total_leads") or 0)
         cpl = safe_cpl(spend, leads)
-        out += f"{ad_set:<35} {camp:<35} {plat:<15} {fmt_cad(spend):>12} {int(leads):>8,} {fmt_cad(cpl):>10}\n"
+        out += f"{ad_set:<35} {camp:<35} {plat:<15} {fmt_cad(spend):>12} {round(leads):>8,} {fmt_cad(cpl):>10}\n"
     return out
 
 

@@ -80,15 +80,15 @@ def _header(date_from: date, date_to: date, title: str) -> str:
 def _conversion_block(d: dict) -> str:
     lines = [
         "Conversion breakdown:",
-        f"  Quick Quote:      {int(d['quick_quote']):,}",
-        f"  Calls (ads):      {int(d['calls_ads']):,}",
-        f"  Connected Calls:  {int(d['calls_invoca']):,}",
-        f"  DTC:              {int(d['dtc']):,}",
+        f"  Quick Quote:      {round(d['quick_quote']):,}",
+        f"  Calls (ads):      {round(d['calls_ads']):,}",
+        f"  Connected Calls:  {round(d['calls_invoca']):,}",
+        f"  DTC:              {round(d['dtc']):,}",
         f"  {'─'*22}",
-        f"  Total:            {int(d['total_leads']):,}",
+        f"  Total:            {round(d['total_leads']):,}",
         "",
         f"Social (exclu du total):",
-        f"  Meta Leads:       {int(d['meta_leads']):,}",
+        f"  Meta Leads:       {round(d['meta_leads']):,}",
     ]
     return "\n".join(lines)
 
@@ -117,7 +117,7 @@ def allstate_performance(
 
         out = _header(start, end, "Allstate")
         out += f"Spend:        {fmt_cad(cur['spend'])}\n"
-        out += f"Total leads:  {int(cur['total_leads']):,}\n"
+        out += f"Total leads:  {round(cur['total_leads']):,}\n"
         out += f"CPL:          {fmt_cad(cur['cpl'])}\n"
         out += f"Clicks:       {int(cur['clicks']):,}\n"
         out += f"Impressions:  {int(cur['impressions']):,}\n"
@@ -178,8 +178,8 @@ ORDER BY spend DESC
         cpl = safe_cpl(spend, leads)
         clicks = int(r.get("CLICKS") or r.get("clicks") or 0)
         imp = int(r.get("IMPRESSIONS") or r.get("impressions") or 0)
-        out += f"{str(grp):<30} {fmt_cad(spend):>12} {int(leads):>8,} {fmt_cad(cpl):>10} {clicks:>8,} {imp:>12,}\n"
-    out += f"\n⚠️  Leads excluent DTC (non ventilable par {group_by}) — DTC total période: {int(total_dtc):,}\n"
+        out += f"{str(grp):<30} {fmt_cad(spend):>12} {round(leads):>8,} {fmt_cad(cpl):>10} {clicks:>8,} {imp:>12,}\n"
+    out += f"\n⚠️  Leads excluent DTC (non ventilable par {group_by}) — DTC total période: {round(total_dtc):,}\n"
     return out
 
 
@@ -197,14 +197,14 @@ def allstate_conversion_breakdown(
     def pct(v):
         return f"{v/total*100:.1f}%" if total else "—"
 
-    out += f"Quick Quote:        {int(d['quick_quote']):>8,}   ({pct(d['quick_quote'])})\n"
-    out += f"Calls from ads:     {int(d['calls_ads']):>8,}   ({pct(d['calls_ads'])})\n"
-    out += f"Connected Calls:    {int(d['calls_invoca']):>8,}   ({pct(d['calls_invoca'])})\n"
-    out += f"DTC:                {int(d['dtc']):>8,}   ({pct(d['dtc'])})\n"
+    out += f"Quick Quote:        {round(d['quick_quote']):>8,}   ({pct(d['quick_quote'])})\n"
+    out += f"Calls from ads:     {round(d['calls_ads']):>8,}   ({pct(d['calls_ads'])})\n"
+    out += f"Connected Calls:    {round(d['calls_invoca']):>8,}   ({pct(d['calls_invoca'])})\n"
+    out += f"DTC:                {round(d['dtc']):>8,}   ({pct(d['dtc'])})\n"
     out += "─" * 42 + "\n"
-    out += f"Total leads:        {int(total):>8,}\n\n"
+    out += f"Total leads:        {round(total):>8,}\n\n"
     out += f"Social (exclu du total):\n"
-    out += f"  Meta Leads:       {int(d['meta_leads']):>8,}\n\n"
+    out += f"  Meta Leads:       {round(d['meta_leads']):>8,}\n\n"
     out += f"Spend: {fmt_cad(d['spend'])}   CPL: {fmt_cad(d['cpl'])}\n"
     return out
 
@@ -252,8 +252,8 @@ ORDER BY spend DESC
         cpl = safe_cpl(spend, leads)
         clicks = int(r.get("CLICKS") or r.get("clicks") or 0)
         pct_spend = spend / total_spend * 100 if total_spend else 0
-        out += f"{str(region):<20} {fmt_cad(spend):>12} {pct_spend:>7.1f}% {int(leads):>8,} {fmt_cad(cpl):>10} {clicks:>8,}\n"
-    out += f"\n* Leads excluent DTC (non ventilable par région) — DTC total: {int(total_dtc):,}\n"
+        out += f"{str(region):<20} {fmt_cad(spend):>12} {pct_spend:>7.1f}% {round(leads):>8,} {fmt_cad(cpl):>10} {clicks:>8,}\n"
+    out += f"\n* Leads excluent DTC (non ventilable par région) — DTC total: {round(total_dtc):,}\n"
     return out
 
 
@@ -318,7 +318,7 @@ LIMIT {min(limit, 50)}
         ci = float(r.get("CALLS_INVOCA") or r.get("calls_invoca") or 0)
         leads = qq + ca + ci
         cpl = safe_cpl(spend, leads)
-        out += f"{camp:<50} {plat:<15} {reg:<25} {fmt_cad(spend):>12} {int(leads):>8,} {fmt_cad(cpl):>10}\n"
+        out += f"{camp:<50} {plat:<15} {reg:<25} {fmt_cad(spend):>12} {round(leads):>8,} {fmt_cad(cpl):>10}\n"
     out += "\n* Leads = QQ+Calls (DTC non ventilable par campagne)\n"
     return out
 
@@ -353,7 +353,7 @@ def allstate_wow(week_start: str | None = None) -> str:
     out += note
 
     def row(label, cur_v, prev_v, is_money=False, is_leads=False):
-        fmt = fmt_cad if is_money else (lambda x: f"{int(x):,}" if x is not None else "N/A")
+        fmt = fmt_cad if is_money else (lambda x: f"{round(x):,}" if x is not None else "N/A")
         d = delta_pct(cur_v or 0, prev_v or 0)
         return f"  {label:<20} {fmt(cur_v):>12}   {fmt(prev_v):>12}   {fmt_pct(d):>8}\n"
 
@@ -375,10 +375,10 @@ def allstate_wow(week_start: str | None = None) -> str:
     ]:
         cv, pv = cur[ck], prev[pk]
         d = delta_pct(cv, pv)
-        out += f"  {label:<22} {int(cv):>10,}   {int(pv):>10,}   {fmt_pct(d):>8}\n"
+        out += f"  {label:<22} {round(cv):>10,}   {round(pv):>10,}   {fmt_pct(d):>8}\n"
     out += "\n"
     out += f"Social (exclu):\n"
-    out += f"  Meta Leads: {int(cur['meta_leads']):,} vs {int(prev['meta_leads']):,}\n"
+    out += f"  Meta Leads: {round(cur['meta_leads']):,} vs {round(prev['meta_leads']):,}\n"
     return out
 
 
@@ -397,7 +397,6 @@ def allstate_pacing(
     import calendar
     days_in_month = calendar.monthrange(year, m)[1]
     end_of_month = date(year, m, days_in_month)
-    today_d = today()
     period_end = min(yesterday(), end_of_month)
 
     sql = f"""
@@ -410,7 +409,10 @@ WHERE DATE BETWEEN '{start}' AND '{period_end}'
     actual_spend = float((rows[0].get("SPEND") or rows[0].get("spend") or 0)) if rows else 0
 
     days_elapsed = (period_end - start).days + 1
-    days_remaining = (end_of_month - today_d).days
+    # Complement of days_elapsed: counting from today() skipped the current day
+    # entirely (20 elapsed + 10 remaining = 30 on a 31-day month), contradicting
+    # the projection's own 31-day model (QA v1.2.0, N1).
+    days_remaining = (end_of_month - period_end).days
 
     out = f"📊 Allstate — Pacing {year}-{m:02d}\n\n"
     out += f"Spend actuel ({start} → {period_end}):  {fmt_cad(actual_spend)}\n"
@@ -492,8 +494,8 @@ ORDER BY spend DESC
         leads = qq + ca + ci
         cpl = safe_cpl(spend, leads)
         pct = spend / total_spend * 100 if total_spend else 0
-        out += f"{str(lang):<10} {fmt_cad(spend):>12} {pct:>7.1f}% {int(leads):>8,} {fmt_cad(cpl):>10} {int(r.get('CLICKS') or r.get('clicks') or 0):>8,}\n"
-    out += f"\n* Leads excluent DTC — DTC total: {int(total_dtc):,}\n"
+        out += f"{str(lang):<10} {fmt_cad(spend):>12} {pct:>7.1f}% {round(leads):>8,} {fmt_cad(cpl):>10} {int(r.get('CLICKS') or r.get('clicks') or 0):>8,}\n"
+    out += f"\n* Leads excluent DTC — DTC total: {round(total_dtc):,}\n"
     return out
 
 
@@ -544,8 +546,8 @@ ORDER BY spend DESC
         leads = qq + ca + ci
         cpl = safe_cpl(spend, leads)
         pct = spend / total_spend * 100 if total_spend else 0
-        out += f"{str(cat):<15} {fmt_cad(spend):>12} {pct:>7.1f}% {int(leads):>8,} {fmt_cad(cpl):>10} {int(qq):>8,} {int(ca+ci):>8,} {int(meta):>8,}\n"
-    out += f"\n* Leads excluent DTC — DTC total: {int(total_dtc):,}\n"
+        out += f"{str(cat):<15} {fmt_cad(spend):>12} {pct:>7.1f}% {round(leads):>8,} {fmt_cad(cpl):>10} {round(qq):>8,} {round(ca+ci):>8,} {round(meta):>8,}\n"
+    out += f"\n* Leads excluent DTC — DTC total: {round(total_dtc):,}\n"
     return out
 
 
@@ -599,7 +601,7 @@ ORDER BY DATE{group_clause}
             clicks = int(r.get("CLICKS") or r.get("clicks") or 0)
             imp = float(r.get("IMPRESSIONS") or r.get("impressions") or 0)
             ctr = clicks / imp * 100 if imp else 0
-            out += f"{d:<12} {fmt_cad(spend):>12} {int(leads):>8,} {fmt_cad(cpl):>10} {clicks:>8,} {ctr:>6.2f}%\n"
+            out += f"{d:<12} {fmt_cad(spend):>12} {round(leads):>8,} {fmt_cad(cpl):>10} {clicks:>8,} {ctr:>6.2f}%\n"
     else:
         out += f"{'Date':<12} {'Groupe':<20} {'Spend':>12} {'Leads*':>8}\n"
         out += "─" * 55 + "\n"
@@ -611,7 +613,7 @@ ORDER BY DATE{group_clause}
             ca = float(r.get("CALLS_ADS") or r.get("calls_ads") or 0)
             ci = float(r.get("CALLS_INVOCA") or r.get("calls_invoca") or 0)
             leads = qq + ca + ci
-            out += f"{d:<12} {grp:<20} {fmt_cad(spend):>12} {int(leads):>8,}\n"
+            out += f"{d:<12} {grp:<20} {fmt_cad(spend):>12} {round(leads):>8,}\n"
     out += "\n* Leads excluent DTC\n"
     return out
 
@@ -691,7 +693,7 @@ LIMIT {min(limit, 50)}
         leads_prev = float(r.get("LEADS_PREV") or r.get("leads_prev") or 0)
         cpl_cur = r.get("CPL_CUR") or r.get("cpl_cur")
         delta = delta_pct(leads_cur, leads_prev)
-        out += f"{camp:<48} {plat:<15} {fmt_cad(spend):>12} {int(leads_cur):>8,} {fmt_cad(float(cpl_cur) if cpl_cur else None):>10} {fmt_pct(delta):>12}\n"
+        out += f"{camp:<48} {plat:<15} {fmt_cad(spend):>12} {round(leads_cur):>8,} {fmt_cad(float(cpl_cur) if cpl_cur else None):>10} {fmt_pct(delta):>12}\n"
     out += "\n* Leads excluent DTC\n"
     return out
 

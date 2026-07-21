@@ -79,7 +79,7 @@ SELECT
 FROM {ALLSTATE_DB}.R_RPT_PAID_MEDIA
 WHERE DATE BETWEEN '{start}' AND '{end}'
   AND DB_PLATFORM != 'client_leads'
-  AND REGION = 'QC'
+  AND REGION ILIKE 'Quebec%'
 """
     qc_rows = run_query(qc_sql, ALLSTATE_BINDING)
     qr = qc_rows[0] if qc_rows else {}

@@ -182,7 +182,14 @@ def run_mnp_query(sql: str) -> list[dict[str, Any]]:
 
     If the canonical view fails with the C.CHANNELS DDL error, the query is
     retried on R_RPT_PAIDMEDIA. The blocker RuntimeError is raised only when
-    the fallback also fails.
+    BOTH views fail with the C.CHANNELS signature.
+
+    Subtlety (QA v1.2.0, 1.4/N4): the canonical view's DDL still contains a
+    residual `c.channels`, so ANY user error on it (e.g. an invalid column)
+    forces Snowflake to compile the view body and surfaces C.CHANNELS instead
+    of the user's real error. When the fallback then fails with a DIFFERENT
+    error, that one is the user's actual mistake — surface it, don't hide it
+    behind the "view under maintenance" message.
     """
     try:
         return run_query(sql, MNP_BINDING)
@@ -192,8 +199,9 @@ def run_mnp_query(sql: str) -> list[dict[str, Any]]:
             if fallback_sql != sql:
                 try:
                     return run_query(fallback_sql, MNP_BINDING)
-                except Exception:
-                    pass
+                except Exception as fe:
+                    if not is_channels_error(fe):
+                        raise  # the user's real error, from the healthy view
             raise RuntimeError(MNP_BLOCKER_MSG) from e
         raise
 
